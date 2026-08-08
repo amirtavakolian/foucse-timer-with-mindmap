@@ -61,6 +61,7 @@ export interface MindMapConnection {
   toNodeId: string;
   label?: string;
   color?: string;
+  curveOffset?: { x: number; y: number };
 }
 
 export interface ResizingState {
@@ -190,6 +191,11 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   const [draggingNodeId, setDraggingNodeId] = useState<string | null>(null);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const [resizingState, setResizingState] = useState<ResizingState | null>(null);
+
+  // Connection Dragging state
+  const [draggingConnectionId, setDraggingConnectionId] = useState<string | null>(null);
+  const [connectionDragStart, setConnectionDragStart] = useState<{ x: number, y: number } | null>(null);
+  const [initialCurveOffset, setInitialCurveOffset] = useState<{ x: number, y: number } | null>(null);
 
   // Connection Creation State
   const [connectingFromId, setConnectingFromId] = useState<string | null>(null);
@@ -406,6 +412,23 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
           x: e.clientX - startPanMouse.x,
           y: e.clientY - startPanMouse.y,
         });
+      } else if (draggingConnectionId && connectionDragStart && initialCurveOffset) {
+        const dx = (e.clientX - connectionDragStart.x) / zoom;
+        const dy = (e.clientY - connectionDragStart.y) / zoom;
+        
+        setConnections((prev) =>
+          prev.map((c) =>
+            c.id === draggingConnectionId
+              ? {
+                  ...c,
+                  curveOffset: {
+                    x: initialCurveOffset.x + dx,
+                    y: initialCurveOffset.y + dy,
+                  },
+                }
+              : c
+          )
+        );
       } else if (resizingState) {
         const dx = (e.clientX - resizingState.startMouseX) / zoom;
         const dy = (e.clientY - resizingState.startMouseY) / zoom;
@@ -458,7 +481,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
         );
       }
     },
-    [isPanning, startPanMouse, pan, zoom, draggingNodeId, dragOffset, resizingState]
+    [isPanning, startPanMouse, pan, zoom, draggingNodeId, dragOffset, resizingState, draggingConnectionId, connectionDragStart, initialCurveOffset]
   );
 
   // Global Mouse Up
@@ -466,6 +489,9 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     setIsPanning(false);
     setDraggingNodeId(null);
     setResizingState(null);
+    setDraggingConnectionId(null);
+    setConnectionDragStart(null);
+    setInitialCurveOffset(null);
   };
 
   // Node Resize Drag Start
@@ -1075,21 +1101,24 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
               const dx = p2.x - p1.x;
               const dy = p2.y - p1.y;
 
-              let cx1 = p1.x + dx * 0.4;
-              let cy1 = p1.y + dy * 0.1;
-              let cx2 = p2.x - dx * 0.4;
-              let cy2 = p2.y - dy * 0.1;
+              const cOffsetX = conn.curveOffset?.x || 0;
+              const cOffsetY = conn.curveOffset?.y || 0;
+
+              let cx1 = p1.x + dx * 0.4 + cOffsetX;
+              let cy1 = p1.y + dy * 0.1 + cOffsetY;
+              let cx2 = p2.x - dx * 0.4 + cOffsetX;
+              let cy2 = p2.y - dy * 0.1 + cOffsetY;
 
               if (Math.abs(dy) > Math.abs(dx)) {
-                cx1 = p1.x + dx * 0.1;
-                cy1 = p1.y + dy * 0.4;
-                cx2 = p2.x - dx * 0.1;
-                cy2 = p2.y - dy * 0.4;
+                cx1 = p1.x + dx * 0.1 + cOffsetX;
+                cy1 = p1.y + dy * 0.4 + cOffsetY;
+                cx2 = p2.x - dx * 0.1 + cOffsetX;
+                cy2 = p2.y - dy * 0.4 + cOffsetY;
               }
 
               const pathData = `M ${p1.x} ${p1.y} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${p2.x} ${p2.y}`;
-              const midX = (p1.x + p2.x) / 2;
-              const midY = (p1.y + p2.y) / 2;
+              const midX = 0.125 * p1.x + 0.375 * cx1 + 0.375 * cx2 + 0.125 * p2.x;
+              const midY = 0.125 * p1.y + 0.375 * cy1 + 0.375 * cy2 + 0.125 * p2.y;
 
               return (
                 <g key={conn.id} className="pointer-events-auto group">
@@ -1100,6 +1129,12 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     stroke="transparent"
                     strokeWidth="20"
                     className="cursor-pointer"
+                    onMouseDown={(e) => {
+                      e.stopPropagation();
+                      setDraggingConnectionId(conn.id);
+                      setConnectionDragStart({ x: e.clientX, y: e.clientY });
+                      setInitialCurveOffset(conn.curveOffset || { x: 0, y: 0 });
+                    }}
                   />
                   {/* Visible Glow Path */}
                   <path
