@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   X,
   Plus,
@@ -208,8 +208,50 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   const [openFormatMenuNodeId, setOpenFormatMenuNodeId] = useState<string | null>(null);
   const [fontSizeTargetMap, setFontSizeTargetMap] = useState<Record<string, 'title' | 'body'>>({});
 
+  // Clipboard state for copying node styles
+  const [copiedNodeTemplate, setCopiedNodeTemplate] = useState<Partial<MindMapNode> | null>(null);
+
   // Delete Confirmation state
   const [nodeToDelete, setNodeToDelete] = useState<MindMapNode | null>(null);
+
+  // Collapsed Connections state
+  const [collapsedConnections, setCollapsedConnections] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('mindmap_collapsed_conns');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    localStorage.setItem('mindmap_collapsed_conns', JSON.stringify(collapsedConnections));
+  }, [collapsedConnections]);
+
+  const { hiddenNodes, hiddenConnections } = useMemo(() => {
+    const hn = new Set<string>();
+    const hc = new Set<string>();
+
+    const hideRecursively = (nodeId: string) => {
+      if (hn.has(nodeId)) return;
+      hn.add(nodeId);
+      connections.forEach((c) => {
+        if (c.fromNodeId === nodeId) {
+          hc.add(c.id);
+          hideRecursively(c.toNodeId);
+        }
+      });
+    };
+
+    collapsedConnections.forEach((connId) => {
+      const conn = connections.find((c) => c.id === connId);
+      if (conn) {
+        hideRecursively(conn.toNodeId);
+      }
+    });
+
+    return { hiddenNodes: hn, hiddenConnections: hc };
+  }, [nodes, connections, collapsedConnections]);
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -217,14 +259,76 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   const containerRef = useRef<HTMLDivElement>(null);
   const modalWrapperRef = useRef<HTMLDivElement>(null);
 
-  // Fullscreen listener
+  // Fullscreen listener & Keyboard shortcuts
   useEffect(() => {
     const handleFSChange = () => {
       setIsFullscreen(!!document.fullscreenElement);
     };
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Don't trigger if user is typing in an input or textarea
+      const target = e.target as HTMLElement;
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
+        if (selectedNodeId) {
+          const node = nodes.find(n => n.id === selectedNodeId);
+          if (node) {
+            setCopiedNodeTemplate({
+              shape: node.shape,
+              color: node.color,
+              width: node.width,
+              height: node.height,
+              fontSize: node.fontSize,
+              titleFontSize: node.titleFontSize,
+              contentFontSize: node.contentFontSize,
+              isBold: node.isBold,
+              isItalic: node.isItalic,
+            });
+          }
+        }
+      }
+
+      if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+        if (copiedNodeTemplate) {
+          const viewWidth = containerRef.current?.clientWidth || 800;
+          const viewHeight = containerRef.current?.clientHeight || 600;
+          
+          const canvasCenterX = (viewWidth / 2 - pan.x) / zoom;
+          const canvasCenterY = (viewHeight / 2 - pan.y) / zoom;
+          const cascadeOffset = (nodes.length % 5) * 15;
+
+          const newNode: MindMapNode = {
+            id: `node_${Date.now()}`,
+            x: canvasCenterX - (copiedNodeTemplate.width || 200) / 2 + cascadeOffset,
+            y: canvasCenterY - (copiedNodeTemplate.height || 90) / 2 + cascadeOffset,
+            width: copiedNodeTemplate.width || 200,
+            height: copiedNodeTemplate.height || 90,
+            title: '',
+            notes: '',
+            todos: [],
+            shape: copiedNodeTemplate.shape || 'rectangle',
+            color: copiedNodeTemplate.color || 'cyan',
+            fontSize: copiedNodeTemplate.fontSize,
+            titleFontSize: copiedNodeTemplate.titleFontSize,
+            contentFontSize: copiedNodeTemplate.contentFontSize,
+            isBold: copiedNodeTemplate.isBold,
+            isItalic: copiedNodeTemplate.isItalic,
+          };
+          
+          setNodes(prev => [...prev, newNode]);
+          setSelectedNodeId(newNode.id);
+        }
+      }
+    };
+
     document.addEventListener('fullscreenchange', handleFSChange);
-    return () => document.removeEventListener('fullscreenchange', handleFSChange);
-  }, []);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFSChange);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [selectedNodeId, copiedNodeTemplate, nodes, pan, zoom]);
 
   const handleToggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -961,6 +1065,10 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             </defs>
 
             {connections.map((conn) => {
+              if (hiddenConnections.has(conn.id)) return null;
+              
+              const isCollapsed = collapsedConnections.includes(conn.id);
+
               const { p1, p2 } = getConnectionEndpoints(conn.fromNodeId, conn.toNodeId);
 
               // Calculate control points for smooth bezier curve connecting outer boundaries
@@ -992,10 +1100,6 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     stroke="transparent"
                     strokeWidth="20"
                     className="cursor-pointer"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteConnection(conn.id);
-                    }}
                   />
                   {/* Visible Glow Path */}
                   <path
@@ -1004,34 +1108,69 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     stroke={conn.color || '#d946ef'}
                     strokeWidth="3"
                     strokeDasharray="6 4"
-                    markerEnd="url(#arrowhead-fuchsia)"
-                    className="transition-all duration-300 drop-shadow-[0_0_8px_rgba(217,70,239,0.6)] group-hover:stroke-cyan-400 group-hover:stroke-width-4"
+                    markerEnd={isCollapsed ? undefined : "url(#arrowhead-fuchsia)"}
+                    className={`transition-all duration-300 drop-shadow-[0_0_8px_rgba(217,70,239,0.6)] ${isCollapsed ? 'opacity-50' : 'group-hover:stroke-cyan-400 group-hover:stroke-width-4'}`}
                   />
+                  
                   {/* Delete connection badge on hover */}
-                  <circle
-                    cx={midX}
-                    cy={midY}
-                    r="12"
-                    fill="#150533"
-                    stroke="#d946ef"
-                    strokeWidth="1.5"
-                    className="cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteConnection(conn.id);
-                    }}
-                  />
-                  <text
-                    x={midX}
-                    y={midY + 4}
-                    textAnchor="middle"
-                    fill="#f43f5e"
-                    fontSize="10"
-                    fontWeight="bold"
-                    className="cursor-pointer opacity-0 group-hover:opacity-100 pointer-events-none"
-                  >
-                    ✕
-                  </text>
+                  <g className="opacity-0 group-hover:opacity-100 transition-opacity">
+                    <circle
+                      cx={midX - 14}
+                      cy={midY}
+                      r="10"
+                      fill="#150533"
+                      stroke="#f43f5e"
+                      strokeWidth="1.5"
+                      className="cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteConnection(conn.id);
+                      }}
+                    />
+                    <text
+                      x={midX - 14}
+                      y={midY + 3.5}
+                      textAnchor="middle"
+                      fill="#f43f5e"
+                      fontSize="10"
+                      fontWeight="bold"
+                      className="pointer-events-none cursor-pointer"
+                    >
+                      ✕
+                    </text>
+                  </g>
+
+                  {/* Collapse / Expand badge */}
+                  <g className={`${isCollapsed ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
+                    <circle
+                      cx={midX + 14}
+                      cy={midY}
+                      r="11"
+                      fill="#150533"
+                      stroke="#06b6d4"
+                      strokeWidth="1.5"
+                      className="cursor-pointer shadow-[0_0_8px_rgba(6,182,212,0.6)]"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (isCollapsed) {
+                          setCollapsedConnections(prev => prev.filter(id => id !== conn.id));
+                        } else {
+                          setCollapsedConnections(prev => [...prev, conn.id]);
+                        }
+                      }}
+                    />
+                    <text
+                      x={midX + 14}
+                      y={midY + 4}
+                      textAnchor="middle"
+                      fill="#06b6d4"
+                      fontSize="14"
+                      fontWeight="bold"
+                      className="pointer-events-none cursor-pointer"
+                    >
+                      {isCollapsed ? '+' : '−'}
+                    </text>
+                  </g>
                 </g>
               );
             })}
@@ -1073,6 +1212,8 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
           {/* Interactive Mind Map Nodes */}
           {nodes.map((node) => {
+            if (hiddenNodes.has(node.id)) return null;
+
             const isSelected = selectedNodeId === node.id;
             const isConnecting = connectingFromId === node.id;
 
