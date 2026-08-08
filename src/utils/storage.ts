@@ -5,6 +5,7 @@ export const SETTINGS_KEY = 'win_focus_timer_settings_v1';
 export const TASKS_KEY = 'win_focus_timer_tasks_v1';
 export const MINDMAP_NODES_KEY = 'focustime_mindmap_nodes_v1';
 export const MINDMAP_CONNS_KEY = 'focustime_mindmap_conns_v1';
+export const ACTIVE_TIMER_KEY = 'focustime_active_timer_v1';
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',
@@ -191,5 +192,44 @@ export function importBackupData(jsonStr: string): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+export interface ActiveTimerState {
+  status: 'idle' | 'running' | 'paused' | 'completed';
+  targetSeconds: number;
+  remainingSeconds: number;
+  activeTaskName: string;
+  endTime: number | null;
+  activeSession: {
+    id: string;
+    startTime: number;
+    elapsedSeconds: number;
+  } | null;
+}
+
+export function loadActiveTimerState(): ActiveTimerState | null {
+  try {
+    const raw = localStorage.getItem(ACTIVE_TIMER_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Failed to load active timer state', e);
+  }
+  return null;
+}
+
+export function saveActiveTimerState(state: ActiveTimerState): void {
+  try {
+    localStorage.setItem(ACTIVE_TIMER_KEY, JSON.stringify(state));
+  } catch (e) {
+    console.warn('Failed to save active timer state', e);
+  }
+}
+
+export function clearActiveTimerState(): void {
+  try {
+    localStorage.removeItem(ACTIVE_TIMER_KEY);
+  } catch (e) {
+    console.warn('Failed to clear active timer state', e);
   }
 }

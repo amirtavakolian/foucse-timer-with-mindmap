@@ -18,6 +18,9 @@ import {
   saveTasks,
   saveAllSessions,
   fetchServerData,
+  loadActiveTimerState,
+  saveActiveTimerState,
+  clearActiveTimerState,
   SESSIONS_KEY,
   TASKS_KEY,
   SETTINGS_KEY,
@@ -35,22 +38,25 @@ export default function App() {
   const [sessions, setSessions] = useState<FocusSession[]>(() => loadSessions());
   const [tasks, setTasks] = useState<TaskItem[]>(() => loadTasks());
 
+  // Load initial timer state if exists
+  const initialTimerState = useRef(loadActiveTimerState());
+
   // Timer Core State
-  const [status, setStatus] = useState<TimerStatus>('idle');
-  const [targetSeconds, setTargetSeconds] = useState<number>(3600); // Default 1 hour
-  const [remainingSeconds, setRemainingSeconds] = useState<number>(3600);
-  const [activeTaskName, setActiveTaskName] = useState<string>('Daily Deep Work & Focus');
+  const [status, setStatus] = useState<TimerStatus>(initialTimerState.current?.status || 'idle');
+  const [targetSeconds, setTargetSeconds] = useState<number>(initialTimerState.current?.targetSeconds || 3600);
+  const [remainingSeconds, setRemainingSeconds] = useState<number>(initialTimerState.current?.remainingSeconds || 3600);
+  const [activeTaskName, setActiveTaskName] = useState<string>(initialTimerState.current?.activeTaskName || 'Daily Deep Work & Focus');
 
   // Active Session tracking
   const [activeSession, setActiveSession] = useState<{
     id: string;
     startTime: number;
     elapsedSeconds: number;
-  } | null>(null);
+  } | null>(initialTimerState.current?.activeSession || null);
 
   // Notification Modal State
   const [isNotificationOpen, setIsNotificationOpen] = useState<boolean>(false);
-  const [lastCompletedDuration, setLastCompletedDuration] = useState<number>(3600);
+  const [lastCompletedDuration, setLastCompletedDuration] = useState<number>(initialTimerState.current?.targetSeconds || 3600);
 
   // Selected Date for 24h timeline
   const [selectedDateStr, setSelectedDateStr] = useState<string>(() => getTodayDateStr());
@@ -63,7 +69,8 @@ export default function App() {
 
   // Reference for interval and exact end time
   const timerRef = useRef<NodeJS.Timeout | null>(null);
-  const endTimeRef = useRef<number | null>(null);
+  const endTimeRef = useRef<number | null>(initialTimerState.current?.endTime || null);
+
 
   const activeSessionRef = useRef(activeSession);
   useEffect(() => { activeSessionRef.current = activeSession; }, [activeSession]);
@@ -242,6 +249,18 @@ export default function App() {
       window.removeEventListener('focus', handleSyncOnWakeup);
     };
   }, [status]);
+
+  // Persist active timer state
+  useEffect(() => {
+    saveActiveTimerState({
+      status,
+      targetSeconds,
+      remainingSeconds,
+      activeTaskName,
+      endTime: endTimeRef.current,
+      activeSession,
+    });
+  }, [status, targetSeconds, remainingSeconds, activeTaskName, activeSession]);
 
   // Update Window Title Bar dynamically with countdown timer
   useEffect(() => {
