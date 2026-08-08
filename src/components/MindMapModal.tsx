@@ -20,7 +20,8 @@ import {
   Type,
   LayoutGrid,
   Lock,
-  Unlock
+  Unlock,
+  Pencil
 } from 'lucide-react';
 
 export interface MindMapTodo {
@@ -188,6 +189,9 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   // New todo input state per node
   const [newTodoTexts, setNewTodoTexts] = useState<Record<string, string>>({});
+
+  // Todo Item Editing state
+  const [editingTodo, setEditingTodo] = useState<{ nodeId: string; todoId: string; text: string } | null>(null);
 
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -500,6 +504,38 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     );
   };
 
+  // Start Editing Todo
+  const handleStartEditTodo = (nodeId: string, todoId: string, currentText: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setEditingTodo({ nodeId, todoId, text: currentText });
+  };
+
+  // Save Edited Todo
+  const handleSaveEditTodo = () => {
+    if (!editingTodo) return;
+    const { nodeId, todoId, text } = editingTodo;
+    const trimmed = text.trim();
+    if (trimmed) {
+      setNodes((prev) =>
+        prev.map((n) => {
+          if (n.id === nodeId) {
+            return {
+              ...n,
+              todos: n.todos.map((t) => (t.id === todoId ? { ...t, text: trimmed } : t)),
+            };
+          }
+          return n;
+        })
+      );
+    }
+    setEditingTodo(null);
+  };
+
+  // Cancel Editing Todo
+  const handleCancelEditTodo = () => {
+    setEditingTodo(null);
+  };
+
   // Update Node Title
   const handleUpdateTitle = (nodeId: string, title: string) => {
     setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, title } : n)));
@@ -729,7 +765,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
-        className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing bg-[#090314] bg-[radial-gradient(#d946ef_1.5px,transparent_1.5px)] [background-size:32px_32px]"
+        className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing bg-black"
       >
         {/* Infinite Transformed World Layer */}
         <div
@@ -970,9 +1006,10 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                 <div className="p-2.5 border-b border-fuchsia-900/50 flex items-center justify-between gap-2 bg-[#0d0221]/80 rounded-t-2xl cursor-grab active:cursor-grabbing">
                   <input
                     type="text"
+                    dir="rtl"
                     value={node.title}
                     onChange={(e) => handleUpdateTitle(node.id, e.target.value)}
-                    className="bg-transparent text-[12px] font-extrabold text-fuchsia-100 outline-none w-full border-b border-transparent focus:border-fuchsia-400 transition"
+                    className="bg-transparent text-[12px] font-extrabold text-fuchsia-100 outline-none w-full border-b border-transparent focus:border-fuchsia-400 transition text-right"
                   />
 
                   {/* Connect, Lock & Delete Node Buttons */}
@@ -1021,46 +1058,108 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                 {/* Node Body: List of Todos with Checkboxes */}
                 <div className="p-2.5 flex-1 flex flex-col justify-between space-y-2 overflow-hidden min-h-0">
                   <div className="space-y-1.5 flex-1 overflow-y-auto pr-1 min-h-0">
-                    {node.todos.map((todo) => (
-                      <div
-                        key={todo.id}
-                        className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-[#0d0221]/60 border border-fuchsia-900/40 hover:border-fuchsia-700/50 transition group/item"
-                      >
-                        <div className="flex items-center gap-2 flex-1 min-w-0">
-                          <button
-                            onClick={() => handleToggleTodo(node.id, todo.id)}
-                            className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition ${
-                              todo.completed
-                                ? 'bg-emerald-500 text-black font-bold'
-                                : 'border border-fuchsia-600 hover:border-cyan-400'
-                            }`}
-                          >
-                            {todo.completed && <Check className="w-3 h-3 stroke-[3]" />}
-                          </button>
-                          <span
-                            className={`text-[12px] font-medium truncate ${
-                              todo.completed ? 'line-through text-fuchsia-400/50' : 'text-fuchsia-100'
-                            }`}
-                          >
-                            {todo.text}
-                          </span>
-                        </div>
+                    {node.todos.map((todo) => {
+                      const isEditingThis =
+                        editingTodo?.nodeId === node.id && editingTodo?.todoId === todo.id;
 
-                        <button
-                          onClick={() => handleDeleteTodo(node.id, todo.id)}
-                          className="text-rose-400/60 hover:text-rose-300 opacity-0 group-hover/item:opacity-100 transition"
+                      return (
+                        <div
+                          key={todo.id}
+                          dir="rtl"
+                          className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg bg-[#0d0221]/60 border border-fuchsia-900/40 hover:border-fuchsia-700/50 transition group/item"
                         >
-                          <X className="w-3 h-3" />
-                        </button>
-                      </div>
-                    ))}
+                          {isEditingThis ? (
+                            /* Inline Edit Mode */
+                            <div className="flex items-center gap-1 flex-1 min-w-0" dir="rtl">
+                              <input
+                                type="text"
+                                autoFocus
+                                dir="rtl"
+                                value={editingTodo.text}
+                                onChange={(e) =>
+                                  setEditingTodo({ ...editingTodo, text: e.target.value })
+                                }
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    handleSaveEditTodo();
+                                  } else if (e.key === 'Escape') {
+                                    handleCancelEditTodo();
+                                  }
+                                }}
+                                className="flex-1 px-2 py-0.5 text-[12px] rounded bg-[#090314] border border-cyan-400 text-fuchsia-100 outline-none text-right font-medium"
+                              />
+                              {/* Green Checkmark Save Button */}
+                              <button
+                                onClick={handleSaveEditTodo}
+                                className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shrink-0"
+                                title="ذخیره تغییرات (Save)"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                              </button>
+                              {/* Cancel Button */}
+                              <button
+                                onClick={handleCancelEditTodo}
+                                className="p-1 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-bold transition shrink-0"
+                                title="انصراف (Cancel)"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            /* Normal View Mode */
+                            <>
+                              <div className="flex items-center gap-2 flex-1 min-w-0" dir="rtl">
+                                <button
+                                  onClick={() => handleToggleTodo(node.id, todo.id)}
+                                  className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition ${
+                                    todo.completed
+                                      ? 'bg-emerald-500 text-black font-bold'
+                                      : 'border border-fuchsia-600 hover:border-cyan-400'
+                                  }`}
+                                >
+                                  {todo.completed && <Check className="w-3 h-3 stroke-[3]" />}
+                                </button>
+                                <span
+                                  dir="rtl"
+                                  className={`text-[12px] font-medium truncate text-right ${
+                                    todo.completed ? 'line-through text-fuchsia-400/50' : 'text-fuchsia-100'
+                                  }`}
+                                >
+                                  {todo.text}
+                                </span>
+                              </div>
+
+                              {/* Hover buttons: Pencil (Edit) and X (Delete) */}
+                              <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition shrink-0">
+                                <button
+                                  onClick={(e) => handleStartEditTodo(node.id, todo.id, todo.text, e)}
+                                  className="text-cyan-400 hover:text-cyan-300 p-0.5 hover:bg-cyan-950/60 rounded transition"
+                                  title="ویرایش کار (Edit)"
+                                >
+                                  <Pencil className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteTodo(node.id, todo.id)}
+                                  className="text-rose-400/80 hover:text-rose-300 p-0.5 hover:bg-rose-950/60 rounded transition"
+                                  title="حذف کار (Delete)"
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
 
                   {/* Add New Todo Form - Hidden when node is locked */}
                   {!node.isLocked && (
-                    <div className="pt-2 border-t border-fuchsia-900/40 flex items-center gap-1.5">
+                    <div className="pt-2 border-t border-fuchsia-900/40 flex items-center gap-1.5" dir="rtl">
                       <input
                         type="text"
+                        dir="rtl"
                         value={newTodoTexts[node.id] || ''}
                         onChange={(e) =>
                           setNewTodoTexts((prev) => ({ ...prev, [node.id]: e.target.value }))
@@ -1072,7 +1171,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                           }
                         }}
                         placeholder="+ افزودن کار جدید..."
-                        className="flex-1 px-2.5 py-1 text-[12px] rounded-lg bg-[#0d0221] border border-fuchsia-800/60 text-fuchsia-100 placeholder-fuchsia-400/40 outline-none focus:border-cyan-400"
+                        className="flex-1 px-2.5 py-1 text-[12px] rounded-lg bg-[#0d0221] border border-fuchsia-800/60 text-fuchsia-100 placeholder-fuchsia-400/40 outline-none focus:border-cyan-400 text-right"
                       />
                       <button
                         onClick={() => handleAddTodoToNode(node.id)}

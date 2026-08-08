@@ -7,6 +7,7 @@ export interface FocusSession {
   taskName?: string;
   completed: boolean;
   dateStr: string; // YYYY-MM-DD
+  sessionType?: 'focus' | 'idle';
 }
 
 export interface HourFocusData {

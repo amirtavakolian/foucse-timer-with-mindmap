@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, Calendar, Zap, Info, ChevronRight, ChevronLeft, Trash2, CheckCircle2, Coffee, Filter, Hourglass } from 'lucide-react';
+import { Clock, Calendar, Zap, Info, ChevronRight, ChevronLeft, Trash2, CheckCircle2, Coffee, Filter, Hourglass, Plus, X, Check } from 'lucide-react';
 import { AppSettings, FocusSession, HourFocusData } from '../types';
 import { calculate24HourBreakdown, formatDurationHuman, formatHourLabel, formatShamsiDate, generateDayIntervals, getTodayDateStr, toPersianDigits, TimeIntervalRecord } from '../utils/time';
 
@@ -10,6 +10,8 @@ interface Timeline24hProps {
   sessions: FocusSession[];
   activeSession: { startTime: number; elapsedSeconds: number } | null;
   onClearDay: (dateStr: string) => void;
+  onAddSession?: (session: FocusSession) => void;
+  onDeleteSession?: (sessionId: string) => void;
 }
 
 export const Timeline24h: React.FC<Timeline24hProps> = ({
@@ -19,11 +21,21 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
   sessions,
   activeSession,
   onClearDay,
+  onAddSession,
+  onDeleteSession,
 }) => {
   const todayStr = getTodayDateStr();
   const isToday = selectedDateStr === todayStr;
 
   const [intervalFilter, setIntervalFilter] = useState<'all' | 'focus' | 'idle'>('all');
+
+  // Manual interval form state
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [startTimeInput, setStartTimeInput] = useState('09:00');
+  const [endTimeInput, setEndTimeInput] = useState('10:00');
+  const [intervalType, setIntervalType] = useState<'focus' | 'idle'>('focus');
+  const [taskNameInput, setTaskNameInput] = useState('');
+  const [formError, setFormError] = useState<string | null>(null);
 
   // Filter sessions for selected date
   const daySessions = sessions.filter((s) => s.dateStr === selectedDateStr);
@@ -41,8 +53,60 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
     return true;
   });
 
-  // Total seconds worked today
-  const totalFocusSeconds = hoursData.reduce((acc, h) => acc + h.focusSeconds, 0);
+  // Handle manual interval submission
+  const handleAddIntervalSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!startTimeInput || !endTimeInput) {
+      setFormError('لطفاً زمان شروع و پایان را وارد کنید');
+      return;
+    }
+
+    const [sH, sM] = startTimeInput.split(':').map(Number);
+    const [eH, eM] = endTimeInput.split(':').map(Number);
+
+    if (isNaN(sH) || isNaN(sM) || isNaN(eH) || isNaN(eM)) {
+      setFormError('فرمت زمان وارد شده نامعتبر است');
+      return;
+    }
+
+    const [year, month, day] = selectedDateStr.split('-').map(Number);
+    const startMs = new Date(year, month - 1, day, sH, sM, 0, 0).getTime();
+    const endMs = new Date(year, month - 1, day, eH, eM, 0, 0).getTime();
+
+    if (endMs <= startMs) {
+      setFormError('ساعت پایان باید بعد از ساعت شروع باشد');
+      return;
+    }
+
+    const durationSec = Math.round((endMs - startMs) / 1000);
+
+    const newSession: FocusSession = {
+      id: `manual_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      startTime: startMs,
+      endTime: endMs,
+      durationSeconds: durationSec,
+      elapsedSeconds: durationSec,
+      completed: true,
+      dateStr: selectedDateStr,
+      taskName: taskNameInput.trim() || (intervalType === 'focus' ? 'ثبت دستی تمرکز' : 'ثبت دستی استراحت'),
+      sessionType: intervalType,
+    };
+
+    if (onAddSession) {
+      onAddSession(newSession);
+    }
+
+    setShowAddForm(false);
+    setTaskNameInput('');
+    setFormError(null);
+  };
+
+  // Total seconds worked today directly from intervals
+  const totalFocusSeconds = intervals
+    .filter((i) => i.type === 'focus')
+    .reduce((acc, i) => acc + i.durationSeconds, 0);
 
   // Find peak hour
   const peakHourObj = [...hoursData].sort((a, b) => b.focusSeconds - a.focusSeconds)[0];
@@ -180,42 +244,167 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
             </p>
           </div>
 
-          {/* Filter Tabs */}
-          <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#0d0221] border border-fuchsia-800/60 text-xs font-bold">
+          <div className="flex flex-col items-start sm:items-end gap-2">
+            {/* Filter Tabs */}
+            <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#0d0221] border border-fuchsia-800/60 text-xs font-bold">
+              <button
+                onClick={() => setIntervalFilter('all')}
+                className={`px-3 py-1.5 rounded-lg transition ${
+                  intervalFilter === 'all'
+                    ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-[0_0_10px_rgba(217,70,239,0.3)]'
+                    : 'text-fuchsia-300 hover:text-white'
+                }`}
+              >
+                All
+              </button>
+              <button
+                onClick={() => setIntervalFilter('focus')}
+                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${
+                  intervalFilter === 'focus'
+                    ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-[0_0_10px_rgba(217,70,239,0.3)]'
+                    : 'text-fuchsia-300 hover:text-white'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block shadow-[0_0_6px_#22d3ee]"></span>
+                <span>Focus</span>
+              </button>
+              <button
+                onClick={() => setIntervalFilter('idle')}
+                className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${
+                  intervalFilter === 'idle'
+                    ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-[0_0_10px_rgba(217,70,239,0.3)]'
+                    : 'text-fuchsia-300 hover:text-white'
+                }`}
+              >
+                <span className="w-2 h-2 rounded-full bg-amber-400 inline-block"></span>
+                <span>Unfocused</span>
+              </button>
+            </div>
+
+            {/* Add Manual Interval Button - Placed directly below Filter Tabs */}
             <button
-              onClick={() => setIntervalFilter('all')}
-              className={`px-3 py-1.5 rounded-lg transition ${
-                intervalFilter === 'all'
-                  ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-[0_0_10px_rgba(217,70,239,0.3)]'
-                  : 'text-fuchsia-300 hover:text-white'
-              }`}
+              onClick={() => setShowAddForm(!showAddForm)}
+              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-fuchsia-600 hover:from-cyan-500 hover:to-fuchsia-500 text-white text-xs font-bold transition shadow-[0_0_12px_rgba(34,211,238,0.3)] shrink-0"
             >
-              All
-            </button>
-            <button
-              onClick={() => setIntervalFilter('focus')}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${
-                intervalFilter === 'focus'
-                  ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-[0_0_10px_rgba(217,70,239,0.3)]'
-                  : 'text-fuchsia-300 hover:text-white'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block shadow-[0_0_6px_#22d3ee]"></span>
-              <span>Focus</span>
-            </button>
-            <button
-              onClick={() => setIntervalFilter('idle')}
-              className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 ${
-                intervalFilter === 'idle'
-                  ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-[0_0_10px_rgba(217,70,239,0.3)]'
-                  : 'text-fuchsia-300 hover:text-white'
-              }`}
-            >
-              <span className="w-2 h-2 rounded-full bg-amber-400 inline-block"></span>
-              <span>Unfocused</span>
+              <Plus className="w-4 h-4" />
+              <span>افزودن بازه زمانی</span>
             </button>
           </div>
         </div>
+
+        {/* Manual Time Interval Creation Form */}
+        {showAddForm && (
+          <form onSubmit={handleAddIntervalSubmit} dir="rtl" className="my-4 p-4 sm:p-5 rounded-2xl bg-[#0d0221] border border-cyan-500/50 shadow-[0_0_20px_rgba(34,211,238,0.15)] space-y-4">
+            <div className="flex items-center justify-between border-b border-fuchsia-900/40 pb-3">
+              <h4 className="text-sm font-extrabold text-cyan-300 flex items-center gap-2">
+                <Plus className="w-4 h-4 text-cyan-400" />
+                <span>افزودن بازه زمانی جدید</span>
+              </h4>
+              <button
+                type="button"
+                onClick={() => setShowAddForm(false)}
+                className="text-fuchsia-400 hover:text-fuchsia-200 transition p-1"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {formError && (
+              <div className="p-2.5 rounded-xl bg-rose-950/80 border border-rose-600/60 text-rose-200 text-xs font-bold">
+                {formError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Start Time */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-fuchsia-300 block">از ساعت (شروع):</label>
+                <input
+                  type="time"
+                  value={startTimeInput}
+                  onChange={(e) => setStartTimeInput(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-[#150533] border border-fuchsia-700/60 text-cyan-300 font-mono text-sm outline-none focus:border-cyan-400"
+                  required
+                />
+              </div>
+
+              {/* End Time */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-bold text-fuchsia-300 block">تا ساعت (پایان):</label>
+                <input
+                  type="time"
+                  value={endTimeInput}
+                  onChange={(e) => setEndTimeInput(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-[#150533] border border-fuchsia-700/60 text-cyan-300 font-mono text-sm outline-none focus:border-cyan-400"
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Type Selection */}
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-bold text-fuchsia-300 block">نوع بازه زمانی:</label>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setIntervalType('focus')}
+                  className={`flex-1 py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 transition ${
+                    intervalType === 'focus'
+                      ? 'bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white border-fuchsia-400 shadow-[0_0_12px_rgba(217,70,239,0.3)]'
+                      : 'bg-[#150533] text-fuchsia-300 border-fuchsia-900/60 hover:border-fuchsia-700'
+                  }`}
+                >
+                  <CheckCircle2 className="w-4 h-4 text-cyan-300" />
+                  <span>تمرکز (Focus)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setIntervalType('idle')}
+                  className={`flex-1 py-2 px-3 rounded-xl border text-xs font-extrabold flex items-center justify-center gap-2 transition ${
+                    intervalType === 'idle'
+                      ? 'bg-amber-950 text-amber-200 border-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.3)]'
+                      : 'bg-[#150533] text-fuchsia-300 border-fuchsia-900/60 hover:border-fuchsia-700'
+                  }`}
+                >
+                  <Coffee className="w-4 h-4 text-amber-400" />
+                  <span>غیر تمرکز / استراحت (Idle)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Task / Description Name */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-bold text-fuchsia-300 block">عنوان یا توضیحات (اختیاری):</label>
+              <input
+                type="text"
+                dir="rtl"
+                placeholder="مثال: مطالعه کتاب، کار روی پروژه، ناهاری..."
+                value={taskNameInput}
+                onChange={(e) => setTaskNameInput(e.target.value)}
+                className="w-full px-3 py-2 rounded-xl bg-[#150533] border border-fuchsia-700/60 text-fuchsia-100 text-xs outline-none focus:border-cyan-400 placeholder-fuchsia-400/40"
+              />
+            </div>
+
+            {/* Submit Buttons */}
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-fuchsia-900/40">
+              <button
+                type="button"
+                onClick={() => setShowAddForm(false)}
+                className="px-4 py-2 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-rose-300 text-xs font-bold transition border border-rose-800/60"
+              >
+                انصراف
+              </button>
+              <button
+                type="submit"
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold transition shadow-[0_0_12px_rgba(16,185,129,0.3)] flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>ثبت بازه زمانی</span>
+              </button>
+            </div>
+          </form>
+        )}
 
         {/* Intervals List */}
         <div className="mt-4 space-y-3 max-h-[500px] overflow-y-auto pr-1">
@@ -260,7 +449,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
                           {isFocus ? 'Focused' : 'Not Focused / Idle'}
                         </span>
 
-                        {isFocus && item.taskName && (
+                        {item.taskName && (
                           <span className="text-xs font-bold text-fuchsia-200">
                             ({item.taskName})
                           </span>
@@ -280,7 +469,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
                     </div>
                   </div>
 
-                  {/* Right: Duration pill */}
+                  {/* Right: Duration pill & optional Delete button */}
                   <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-fuchsia-800/50">
                     <span className="text-xs text-fuchsia-300/80 font-bold uppercase tracking-wider">
                       Duration:
@@ -294,6 +483,20 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
                     >
                       {formatDurationHuman(item.durationSeconds, 'en')}
                     </span>
+
+                    {item.sessionId && onDeleteSession && (
+                      <button
+                        onClick={() => {
+                          if (window.confirm('آیا از حذف این بازه زمانی اطمینان دارید؟')) {
+                            onDeleteSession(item.sessionId!);
+                          }
+                        }}
+                        className="p-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/60 transition shadow-[0_0_8px_rgba(225,29,72,0.2)] ml-1"
+                        title="حذف این بازه زمانی"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               );

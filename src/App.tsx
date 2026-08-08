@@ -245,6 +245,20 @@ export default function App() {
     setSessions(updated);
   };
 
+  // Handle Add Manual Session
+  const handleAddSession = (newSession: FocusSession) => {
+    const updated = [...sessions, newSession];
+    saveAllSessions(updated);
+    setSessions(updated);
+  };
+
+  // Handle Delete Single Session
+  const handleDeleteSession = (sessionId: string) => {
+    const updated = sessions.filter((s) => s.id !== sessionId);
+    saveAllSessions(updated);
+    setSessions(updated);
+  };
+
   return (
     <div
       className={`min-h-screen w-full flex flex-col font-sans transition-colors duration-300 relative overflow-x-hidden ${
@@ -337,6 +351,8 @@ export default function App() {
                   sessions={sessions}
                   activeSession={activeSession}
                   onClearDay={handleClearDaySessions}
+                  onAddSession={handleAddSession}
+                  onDeleteSession={handleDeleteSession}
                 />
               </section>
 
@@ -360,6 +376,7 @@ export default function App() {
                 activeSession={activeSession}
                 selectedDateStr={selectedDateStr}
                 onSelectDate={(d) => setSelectedDateStr(d)}
+                onClearDay={handleClearDaySessions}
               />
             </div>
           </div>

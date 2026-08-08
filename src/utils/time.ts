@@ -113,6 +113,7 @@ export interface TimeIntervalRecord {
   endTimeStr: string;
   durationSeconds: number;
   taskName?: string;
+  sessionId?: string;
 }
 
 /**
@@ -142,8 +143,14 @@ export function generateDayIntervals(
   // Cap time for calculating idle space: now if today, or 24:00 if past day
   const capTime = isToday ? Math.min(nowMs, dayEnd) : dayEnd;
 
-  // Collect and normalize focus sessions that overlap with target day
-  const focusList: { start: number; end: number; taskName?: string }[] = [];
+  // Collect and normalize focus and idle sessions that overlap with target day
+  const sessionList: {
+    id: string;
+    start: number;
+    end: number;
+    taskName?: string;
+    type: 'focus' | 'idle';
+  }[] = [];
 
   const allSessions = [...sessions];
   if (activeSession && isToday) {
@@ -156,6 +163,7 @@ export function generateDayIntervals(
       completed: false,
       dateStr,
       taskName: undefined,
+      sessionType: 'focus',
     });
   }
 
@@ -169,27 +177,29 @@ export function generateDayIntervals(
     const clampedEnd = Math.min(sEnd, capTime);
 
     if (clampedEnd > clampedStart) {
-      focusList.push({
+      sessionList.push({
+        id: s.id,
         start: clampedStart,
         end: clampedEnd,
         taskName: s.taskName,
+        type: s.sessionType === 'idle' ? 'idle' : 'focus',
       });
     }
   });
 
-  // Sort focus sessions chronologically by start time
-  focusList.sort((a, b) => a.start - b.start);
+  // Sort sessions chronologically by start time
+  sessionList.sort((a, b) => a.start - b.start);
 
   const intervals: TimeIntervalRecord[] = [];
   let cursor = dayStart;
 
-  focusList.forEach((item, index) => {
+  sessionList.forEach((item, index) => {
     // If there is an unfocused gap before this session
     if (item.start > cursor) {
       const durationSec = Math.round((item.start - cursor) / 1000);
       if (durationSec >= 1) {
         intervals.push({
-          id: `idle_${cursor}_${item.start}`,
+          id: `idle_gap_${cursor}_${item.start}`,
           type: 'idle',
           startTimeMs: cursor,
           endTimeMs: item.start,
@@ -200,17 +210,18 @@ export function generateDayIntervals(
       }
     }
 
-    // Focus session interval
+    // Session interval
     const durationSec = Math.round((item.end - item.start) / 1000);
     intervals.push({
-      id: `focus_${item.start}_${index}`,
-      type: 'focus',
+      id: item.id || `session_${item.start}_${index}`,
+      type: item.type,
       startTimeMs: item.start,
       endTimeMs: item.end,
       startTimeStr: formatHHMM(item.start, usePersian),
       endTimeStr: formatHHMM(item.end, usePersian),
       durationSeconds: Math.max(1, durationSec),
       taskName: item.taskName,
+      sessionId: item.id !== 'active_live' ? item.id : undefined,
     });
 
     cursor = Math.max(cursor, item.end);
@@ -221,7 +232,7 @@ export function generateDayIntervals(
     const durationSec = Math.round((capTime - cursor) / 1000);
     if (durationSec >= 1) {
       intervals.push({
-        id: `idle_${cursor}_${capTime}`,
+        id: `idle_gap_${cursor}_${capTime}`,
         type: 'idle',
         startTimeMs: cursor,
         endTimeMs: capTime,
@@ -290,6 +301,9 @@ export function calculate24HourBreakdown(
   }
 
   allSessionsToCalculate.forEach((session) => {
+    // Skip idle/break sessions when calculating focus seconds
+    if (session.sessionType === 'idle') return;
+
     const sStart = session.startTime;
     const sEnd = session.endTime || Date.now();
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AppSettings, FocusSession } from '../types';
-import { calculate24HourBreakdown, formatDurationHuman, formatShamsiDate, getTodayDateStr, toPersianDigits } from '../utils/time';
-import { BarChart3, Calendar, CheckCircle2, Clock, Hourglass, Flame, Sparkles, ChevronRight, ChevronLeft } from 'lucide-react';
+import { generateDayIntervals, formatDurationHuman, formatShamsiDate, getTodayDateStr, toPersianDigits } from '../utils/time';
+import { BarChart3, Calendar, CheckCircle2, Clock, Hourglass, Flame, Sparkles, ChevronRight, ChevronLeft, Trash2 } from 'lucide-react';
 
 interface DailyFocusSummarySidebarProps {
   settings: AppSettings;
@@ -9,6 +9,7 @@ interface DailyFocusSummarySidebarProps {
   activeSession: { startTime: number; elapsedSeconds: number } | null;
   selectedDateStr: string;
   onSelectDate: (dateStr: string) => void;
+  onClearDay?: (dateStr: string) => void;
 }
 
 export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> = ({
@@ -17,46 +18,49 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
   activeSession,
   selectedDateStr,
   onSelectDate,
+  onClearDay,
 }) => {
   const todayStr = getTodayDateStr();
 
-  // Number of days to display in the list (e.g. last 7 days or expanded)
-  const [daysCount, setDaysCount] = useState<number>(7);
+  // Only include today and dates >= todayStr (starting from today, no past days)
+  const dateList: string[] = [todayStr];
 
-  // Generate date strings for the past N days
-  const dateList: string[] = [];
-  const now = new Date();
-
-  for (let i = 0; i < daysCount; i++) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    const year = d.getFullYear();
-    const month = (d.getMonth() + 1).toString().padStart(2, '0');
-    const day = d.getDate().toString().padStart(2, '0');
-    dateList.push(`${year}-${month}-${day}`);
-  }
-
-  // Ensure any date in sessions is also available if user has older records
   sessions.forEach((s) => {
-    if (s.dateStr && !dateList.includes(s.dateStr)) {
+    if (s.dateStr && s.dateStr >= todayStr && !dateList.includes(s.dateStr)) {
       dateList.push(s.dateStr);
     }
   });
 
-  // Sort dates descending (newest first)
+  if (selectedDateStr >= todayStr && !dateList.includes(selectedDateStr)) {
+    dateList.push(selectedDateStr);
+  }
+
+  // Sort dates descending (today first)
   dateList.sort((a, b) => (a < b ? 1 : -1));
 
-  // Compute daily stats for each date
+  // Compute daily stats for each date directly from exact time interval report records
   const dailyData = dateList.map((dateStr) => {
-    const hours = calculate24HourBreakdown(dateStr, sessions, activeSession);
-    const totalFocusSec = hours.reduce((acc, h) => acc + h.focusSeconds, 0);
+    const daySessions = sessions.filter((s) => s.dateStr === dateStr);
 
-    // 24 hours = 86,400 seconds
-    const totalDaySec = 86400;
-    const unusedSec = Math.max(0, totalDaySec - totalFocusSec);
+    let totalFocusSec = 0;
+    let unusedSec = 0;
 
-    const focusPercent = Math.min(100, Math.round((totalFocusSec / totalDaySec) * 100));
-    const unusedPercent = Math.max(0, 100 - focusPercent);
+    if (daySessions.length > 0 || (dateStr === todayStr && activeSession)) {
+      const intervals = generateDayIntervals(dateStr, daySessions, activeSession, false);
+
+      totalFocusSec = intervals
+        .filter((i) => i.type === 'focus')
+        .reduce((acc, i) => acc + i.durationSeconds, 0);
+
+      unusedSec = intervals
+        .filter((i) => i.type === 'idle')
+        .reduce((acc, i) => acc + i.durationSeconds, 0);
+    }
+
+    const totalMeasuredSec = totalFocusSec + unusedSec;
+    const focusPercent =
+      totalMeasuredSec > 0 ? Math.min(100, Math.round((totalFocusSec / totalMeasuredSec) * 100)) : 0;
+    const unusedPercent = totalMeasuredSec > 0 ? Math.max(0, 100 - focusPercent) : 0;
 
     return {
       dateStr,
@@ -65,6 +69,7 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
       unusedSec,
       focusPercent,
       unusedPercent,
+      hasSessions: daySessions.length > 0,
     };
   });
 
@@ -79,6 +84,7 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
       return `Today (${shamsi})`;
     }
 
+    const now = new Date();
     const yesterday = new Date(now);
     yesterday.setDate(yesterday.getDate() - 1);
     const yesterdayStr = `${yesterday.getFullYear()}-${(yesterday.getMonth() + 1)
@@ -169,11 +175,29 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
                     </span>
                   </div>
 
-                  {item.isToday && (
-                    <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-[0_0_8px_rgba(217,70,239,0.4)]">
-                      Today
-                    </span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {item.isToday && (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-gradient-to-r from-fuchsia-600 to-pink-600 text-white shadow-[0_0_8px_rgba(217,70,239,0.4)]">
+                        Today
+                      </span>
+                    )}
+
+                    {onClearDay && (item.hasSessions || item.totalFocusSec > 0 || item.unusedSec > 0) && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (window.confirm(`آیا از پاک کردن تمامی زمان‌های ثبت‌شده برای روز ${formatDateLabel(item.dateStr)} اطمینان دارید؟`)) {
+                            onClearDay(item.dateStr);
+                          }
+                        }}
+                        className="p-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/60 transition shadow-[0_0_8px_rgba(225,29,72,0.2)]"
+                        title="پاک کردن داده‌های این روز"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 {/* Focus Time Row */}
@@ -229,16 +253,6 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
             );
           })}
         </div>
-
-        {/* Show More Days Button */}
-        {daysCount < 30 && (
-          <button
-            onClick={() => setDaysCount((prev) => prev + 7)}
-            className="mt-4 py-2.5 px-4 w-full rounded-2xl bg-[#150533] hover:bg-fuchsia-950 text-fuchsia-200 border border-fuchsia-800/60 text-xs font-bold transition flex items-center justify-center gap-1.5"
-          >
-            <span>Show More Days...</span>
-          </button>
-        )}
       </div>
     </aside>
   );
