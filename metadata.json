@@ -1,0 +1,6 @@
+{
+  "name": "Windows Focus Timer",
+  "description": "یک نرم‌افزار تایمر تمرکز دسکتاپ ویندوز همراه با سیستم نوتیفیکیشن بالا و ردیاب ۲۴ ساعته فعالیت روزانه",
+  "requestFramePermissions": ["notifications"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
