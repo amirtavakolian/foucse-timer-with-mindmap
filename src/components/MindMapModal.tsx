@@ -18,7 +18,9 @@ import {
   RotateCcw,
   Network,
   Type,
-  LayoutGrid
+  LayoutGrid,
+  Lock,
+  Unlock
 } from 'lucide-react';
 
 export interface MindMapTodo {
@@ -38,6 +40,7 @@ export interface MindMapNode {
   color: 'cyan' | 'fuchsia' | 'emerald' | 'amber' | 'purple';
   todos: MindMapTodo[];
   notes?: string;
+  isLocked?: boolean;
 }
 
 export interface MindMapConnection {
@@ -488,6 +491,14 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   // Update Node Title
   const handleUpdateTitle = (nodeId: string, title: string) => {
     setNodes((prev) => prev.map((n) => (n.id === nodeId ? { ...n, title } : n)));
+  };
+
+  // Toggle Node Lock State
+  const handleToggleLockNode = (nodeId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setNodes((prev) =>
+      prev.map((n) => (n.id === nodeId ? { ...n, isLocked: !n.isLocked } : n))
+    );
   };
 
   // Calculate Connection Endpoints (Exact outer rectangle border anchors)
@@ -952,7 +963,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     className="bg-transparent text-[12px] font-extrabold text-fuchsia-100 outline-none w-full border-b border-transparent focus:border-fuchsia-400 transition"
                   />
 
-                  {/* Connect & Delete Node Buttons */}
+                  {/* Connect, Lock & Delete Node Buttons */}
                   <div className="flex items-center gap-1 shrink-0">
                     <button
                       onClick={(e) => {
@@ -967,6 +978,22 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                       title="اتصال این نود به نود دیگر"
                     >
                       <Link2 className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={(e) => handleToggleLockNode(node.id, e)}
+                      className={`p-1 rounded-lg border transition ${
+                        node.isLocked
+                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/80 hover:bg-amber-500/30 shadow-[0_0_8px_rgba(245,158,11,0.3)]'
+                          : 'bg-fuchsia-950 hover:bg-fuchsia-900 text-fuchsia-300 border-fuchsia-800/60'
+                      }`}
+                      title={node.isLocked ? 'باز کردن قفل افزودن کار جدید' : 'قفل کردن افزودن کار جدید'}
+                    >
+                      {node.isLocked ? (
+                        <Lock className="w-3.5 h-3.5 text-amber-400" />
+                      ) : (
+                        <Unlock className="w-3.5 h-3.5" />
+                      )}
                     </button>
 
                     <button
@@ -1017,30 +1044,32 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     ))}
                   </div>
 
-                  {/* Add New Todo Form */}
-                  <div className="pt-2 border-t border-fuchsia-900/40 flex items-center gap-1.5">
-                    <input
-                      type="text"
-                      value={newTodoTexts[node.id] || ''}
-                      onChange={(e) =>
-                        setNewTodoTexts((prev) => ({ ...prev, [node.id]: e.target.value }))
-                      }
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddTodoToNode(node.id);
+                  {/* Add New Todo Form - Hidden when node is locked */}
+                  {!node.isLocked && (
+                    <div className="pt-2 border-t border-fuchsia-900/40 flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        value={newTodoTexts[node.id] || ''}
+                        onChange={(e) =>
+                          setNewTodoTexts((prev) => ({ ...prev, [node.id]: e.target.value }))
                         }
-                      }}
-                      placeholder="+ افزودن کار جدید..."
-                      className="flex-1 px-2.5 py-1 text-[12px] rounded-lg bg-[#0d0221] border border-fuchsia-800/60 text-fuchsia-100 placeholder-fuchsia-400/40 outline-none focus:border-cyan-400"
-                    />
-                    <button
-                      onClick={() => handleAddTodoToNode(node.id)}
-                      className="p-1 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold transition"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddTodoToNode(node.id);
+                          }
+                        }}
+                        placeholder="+ افزودن کار جدید..."
+                        className="flex-1 px-2.5 py-1 text-[12px] rounded-lg bg-[#0d0221] border border-fuchsia-800/60 text-fuchsia-100 placeholder-fuchsia-400/40 outline-none focus:border-cyan-400"
+                      />
+                      <button
+                        onClick={() => handleAddTodoToNode(node.id)}
+                        className="p-1 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold transition"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             );
