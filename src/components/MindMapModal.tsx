@@ -50,7 +50,7 @@ export interface MindMapConnection {
 
 export interface ResizingState {
   nodeId: string;
-  corner: 'se' | 'sw' | 'ne' | 'nw';
+  side: 'e' | 'w' | 'n' | 's' | 'se' | 'sw' | 'ne' | 'nw';
   startMouseX: number;
   startMouseY: number;
   startWidth: number;
@@ -277,21 +277,24 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             let newX = resizingState.startX;
             let newY = resizingState.startY;
 
-            if (resizingState.corner === 'se') {
+            const side = resizingState.side;
+
+            // Right edge (Width)
+            if (side === 'e' || side === 'se' || side === 'ne') {
               newWidth = Math.max(160, resizingState.startWidth + dx);
-              newHeight = Math.max(120, resizingState.startHeight + dy);
-            } else if (resizingState.corner === 'sw') {
+            }
+            // Left edge (Width + X position)
+            if (side === 'w' || side === 'sw' || side === 'nw') {
               newWidth = Math.max(160, resizingState.startWidth - dx);
+              newX = resizingState.startX + (resizingState.startWidth - newWidth);
+            }
+            // Bottom edge (Height)
+            if (side === 's' || side === 'se' || side === 'sw') {
               newHeight = Math.max(120, resizingState.startHeight + dy);
-              newX = resizingState.startX + (resizingState.startWidth - newWidth);
-            } else if (resizingState.corner === 'ne') {
-              newWidth = Math.max(160, resizingState.startWidth + dx);
+            }
+            // Top edge (Height + Y position)
+            if (side === 'n' || side === 'ne' || side === 'nw') {
               newHeight = Math.max(120, resizingState.startHeight - dy);
-              newY = resizingState.startY + (resizingState.startHeight - newHeight);
-            } else if (resizingState.corner === 'nw') {
-              newWidth = Math.max(160, resizingState.startWidth - dx);
-              newHeight = Math.max(120, resizingState.startHeight - dy);
-              newX = resizingState.startX + (resizingState.startWidth - newWidth);
               newY = resizingState.startY + (resizingState.startHeight - newHeight);
             }
 
@@ -326,7 +329,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   // Node Resize Drag Start
   const handleResizeMouseDown = (
     node: MindMapNode,
-    corner: 'se' | 'sw' | 'ne' | 'nw',
+    side: 'e' | 'w' | 'n' | 's' | 'se' | 'sw' | 'ne' | 'nw',
     e: React.MouseEvent
   ) => {
     e.stopPropagation();
@@ -334,7 +337,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     setSelectedNodeId(node.id);
     setResizingState({
       nodeId: node.id,
-      corner,
+      side,
       startMouseX: e.clientX,
       startMouseY: e.clientY,
       startWidth: node.width,
@@ -880,34 +883,64 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     : ''
                 } ${isConnecting ? 'ring-2 ring-amber-400 animate-pulse' : ''}`}
               >
-                {/* 4 Corner Resizing Handles - Only visible on node hover/selection */}
+                {/* 4 Edge Resizing Handles (Top/Bottom adjust height, Left/Right adjust width) */}
                 <div
-                  onMouseDown={(e) => handleResizeMouseDown(node, 'se', e)}
-                  className={`absolute bottom-0 right-0 w-4 h-4 bg-cyan-400 border-2 border-[#090314] rounded-full translate-x-1/2 translate-y-1/2 cursor-se-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  onMouseDown={(e) => handleResizeMouseDown(node, 'n', e)}
+                  className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-2 bg-cyan-400 border border-[#090314] rounded-full cursor-ns-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
-                  title="تغییر اندازه (Resize)"
+                  title="تغییر ارتفاع از بالا (Resize Height Top)"
+                />
+                <div
+                  onMouseDown={(e) => handleResizeMouseDown(node, 's', e)}
+                  className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-10 h-2 bg-cyan-400 border border-[#090314] rounded-full cursor-ns-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                    isSelected ? 'opacity-100' : ''
+                  }`}
+                  title="تغییر ارتفاع از پایین (Resize Height Bottom)"
+                />
+                <div
+                  onMouseDown={(e) => handleResizeMouseDown(node, 'w', e)}
+                  className={`absolute top-1/2 left-0 -translate-x-1/2 -translate-y-1/2 h-10 w-2 bg-cyan-400 border border-[#090314] rounded-full cursor-ew-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                    isSelected ? 'opacity-100' : ''
+                  }`}
+                  title="تغییر طول/عرض از چپ (Resize Width Left)"
+                />
+                <div
+                  onMouseDown={(e) => handleResizeMouseDown(node, 'e', e)}
+                  className={`absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 h-10 w-2 bg-cyan-400 border border-[#090314] rounded-full cursor-ew-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                    isSelected ? 'opacity-100' : ''
+                  }`}
+                  title="تغییر طول/عرض از راست (Resize Width Right)"
+                />
+
+                {/* 4 Corner Resizing Handles */}
+                <div
+                  onMouseDown={(e) => handleResizeMouseDown(node, 'se', e)}
+                  className={`absolute bottom-0 right-0 w-3.5 h-3.5 bg-cyan-400 border-2 border-[#090314] rounded-full translate-x-1/2 translate-y-1/2 cursor-se-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                    isSelected ? 'opacity-100' : ''
+                  }`}
+                  title="تغییر اندازه از گوشه"
                 />
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'sw', e)}
-                  className={`absolute bottom-0 left-0 w-4 h-4 bg-cyan-400 border-2 border-[#090314] rounded-full -translate-x-1/2 translate-y-1/2 cursor-sw-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  className={`absolute bottom-0 left-0 w-3.5 h-3.5 bg-cyan-400 border-2 border-[#090314] rounded-full -translate-x-1/2 translate-y-1/2 cursor-sw-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
-                  title="تغییر اندازه (Resize)"
+                  title="تغییر اندازه از گوشه"
                 />
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'ne', e)}
-                  className={`absolute top-0 right-0 w-4 h-4 bg-cyan-400 border-2 border-[#090314] rounded-full translate-x-1/2 -translate-y-1/2 cursor-ne-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  className={`absolute top-0 right-0 w-3.5 h-3.5 bg-cyan-400 border-2 border-[#090314] rounded-full translate-x-1/2 -translate-y-1/2 cursor-ne-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
-                  title="تغییر اندازه (Resize)"
+                  title="تغییر اندازه از گوشه"
                 />
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'nw', e)}
-                  className={`absolute top-0 left-0 w-4 h-4 bg-cyan-400 border-2 border-[#090314] rounded-full -translate-x-1/2 -translate-y-1/2 cursor-nw-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  className={`absolute top-0 left-0 w-3.5 h-3.5 bg-cyan-400 border-2 border-[#090314] rounded-full -translate-x-1/2 -translate-y-1/2 cursor-nw-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
-                  title="تغییر اندازه (Resize)"
+                  title="تغییر اندازه از گوشه"
                 />
 
                 {/* Node Title Bar & Controls */}
