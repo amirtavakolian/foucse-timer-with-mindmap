@@ -1,0 +1,4 @@
+[
+  { "id": "1", "title": "Focus on primary daily goals", "completed": false, "targetMinutes": 60, "completedMinutes": 0 },
+  { "id": "2", "title": "Review emails and messages", "completed": false, "targetMinutes": 30, "completedMinutes": 0 }
+]

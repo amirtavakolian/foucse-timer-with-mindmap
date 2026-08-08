@@ -1,0 +1,45 @@
+[
+  {
+    "id": "node_root",
+    "x": 100,
+    "y": 120,
+    "width": 280,
+    "height": 220,
+    "title": "🎯 هدف اصلی پروژه (Main Goal)",
+    "shape": "header",
+    "color": "fuchsia",
+    "todos": [
+      { "id": "t1", "text": "طراحی نقشه ذهنی و بوم کارها", "completed": true },
+      { "id": "t2", "text": "دسته‌بندی وظایف کلیدی", "completed": false }
+    ],
+    "notes": "پروژه تمرکز ویندوز"
+  },
+  {
+    "id": "node_sub1",
+    "x": 480,
+    "y": 50,
+    "width": 250,
+    "height": 200,
+    "title": "⚡ فاز اول: برنامه‌ریزی",
+    "shape": "rectangle",
+    "color": "cyan",
+    "todos": [
+      { "id": "t3", "text": "بررسی پیش‌نیازها", "completed": true },
+      { "id": "t4", "text": "تنظیم تایمر تمرکز", "completed": false }
+    ]
+  },
+  {
+    "id": "node_sub2",
+    "x": 480,
+    "y": 300,
+    "width": 250,
+    "height": 200,
+    "title": "🚀 فاز دوم: اجرا و توسعه",
+    "shape": "square",
+    "color": "emerald",
+    "todos": [
+      { "id": "t5", "text": "تست چک‌باکس‌ها در دیاگرام", "completed": false },
+      { "id": "t6", "text": "بررسی اتصال فلش‌ها", "completed": false }
+    ]
+  }
+]

@@ -9,7 +9,20 @@ import { SettingsModal } from './components/SettingsModal';
 import { WindowsPwaGuide } from './components/WindowsPwaGuide';
 
 import { AppSettings, FocusSession, TaskItem, TimerStatus } from './types';
-import { loadSessions, loadSettings, loadTasks, saveSession, saveSettings, saveTasks } from './utils/storage';
+import {
+  loadSessions,
+  loadSettings,
+  loadTasks,
+  saveSession,
+  saveSettings,
+  saveTasks,
+  saveAllSessions,
+  fetchServerData,
+  SESSIONS_KEY,
+  TASKS_KEY,
+  SETTINGS_KEY,
+  DEFAULT_SETTINGS
+} from './utils/storage';
 import { formatTime, getTodayDateStr } from './utils/time';
 import { Monitor, Maximize2, Minimize2, Sparkles, CheckCircle2 } from 'lucide-react';
 
@@ -200,10 +213,35 @@ export default function App() {
     }
   }, [remainingSeconds, status]);
 
+  // Initial sync from server JSON files
+  useEffect(() => {
+    async function initStorageSync() {
+      const serverSessions = await fetchServerData<FocusSession[]>(SESSIONS_KEY);
+      if (serverSessions && Array.isArray(serverSessions)) {
+        setSessions(serverSessions);
+        localStorage.setItem(SESSIONS_KEY, JSON.stringify(serverSessions));
+      }
+
+      const serverTasks = await fetchServerData<TaskItem[]>(TASKS_KEY);
+      if (serverTasks && Array.isArray(serverTasks)) {
+        setTasks(serverTasks);
+        localStorage.setItem(TASKS_KEY, JSON.stringify(serverTasks));
+      }
+
+      const serverSettings = await fetchServerData<AppSettings>(SETTINGS_KEY);
+      if (serverSettings) {
+        setSettings({ ...DEFAULT_SETTINGS, ...serverSettings });
+        localStorage.setItem(SETTINGS_KEY, JSON.stringify(serverSettings));
+      }
+    }
+
+    initStorageSync();
+  }, []);
+
   // Handle Clear Day Sessions
   const handleClearDaySessions = (dateStr: string) => {
     const updated = sessions.filter((s) => s.dateStr !== dateStr);
-    localStorage.setItem('win_focus_timer_sessions_v1', JSON.stringify(updated));
+    saveAllSessions(updated);
     setSessions(updated);
   };
 

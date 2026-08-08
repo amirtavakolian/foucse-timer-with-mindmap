@@ -68,8 +68,13 @@ interface MindMapModalProps {
   onSyncTasksToMain?: (tasks: string[]) => void;
 }
 
-const STORAGE_KEY_NODES = 'focustime_mindmap_nodes_v1';
-const STORAGE_KEY_CONNS = 'focustime_mindmap_conns_v1';
+import {
+  saveMindMapNodes,
+  saveMindMapConnections,
+  fetchServerData,
+  MINDMAP_NODES_KEY,
+  MINDMAP_CONNS_KEY
+} from '../utils/storage';
 
 const DEFAULT_NODES: MindMapNode[] = [
   {
@@ -125,7 +130,7 @@ const DEFAULT_CONNS: MindMapConnection[] = [
 export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onSyncTasksToMain }) => {
   const [nodes, setNodes] = useState<MindMapNode[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_NODES);
+      const saved = localStorage.getItem(MINDMAP_NODES_KEY);
       return saved ? JSON.parse(saved) : DEFAULT_NODES;
     } catch {
       return DEFAULT_NODES;
@@ -134,7 +139,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   const [connections, setConnections] = useState<MindMapConnection[]>(() => {
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_CONNS);
+      const saved = localStorage.getItem(MINDMAP_CONNS_KEY);
       return saved ? JSON.parse(saved) : DEFAULT_CONNS;
     } catch {
       return DEFAULT_CONNS;
@@ -218,22 +223,29 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     }
   };
 
-  // Save to localStorage
+  // Save to localStorage & Server JSON files
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_NODES, JSON.stringify(nodes));
-    } catch (e) {
-      console.error(e);
-    }
+    saveMindMapNodes(nodes);
   }, [nodes]);
 
   useEffect(() => {
-    try {
-      localStorage.setItem(STORAGE_KEY_CONNS, JSON.stringify(connections));
-    } catch (e) {
-      console.error(e);
-    }
+    saveMindMapConnections(connections);
   }, [connections]);
+
+  // Sync from Server JSON on mount/open
+  useEffect(() => {
+    async function syncServerMindMap() {
+      const serverNodes = await fetchServerData<MindMapNode[]>(MINDMAP_NODES_KEY);
+      if (serverNodes && Array.isArray(serverNodes) && serverNodes.length > 0) {
+        setNodes(serverNodes);
+      }
+      const serverConns = await fetchServerData<MindMapConnection[]>(MINDMAP_CONNS_KEY);
+      if (serverConns && Array.isArray(serverConns)) {
+        setConnections(serverConns);
+      }
+    }
+    syncServerMindMap();
+  }, []);
 
   // Center Canvas View
   const handleResetView = () => {
