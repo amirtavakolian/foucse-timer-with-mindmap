@@ -75,6 +75,19 @@ export interface ResizingState {
   startY: number;
 }
 
+const getNodePath = (width: number, height: number, shape: string) => {
+  if (shape === 'circle') {
+    const rx = width / 2;
+    const ry = height / 2;
+    return `M ${rx} 0 A ${rx} ${ry} 0 1 1 ${rx} ${height} A ${rx} ${ry} 0 1 1 ${rx} 0`;
+  }
+  const r = Math.min(16, width / 2, height / 2);
+  const w = width;
+  const h = height;
+  return `M ${w / 2} 0 L ${w - r} 0 A ${r} ${r} 0 0 1 ${w} ${r} L ${w} ${h - r} A ${r} ${r} 0 0 1 ${w - r} ${h} L ${r} ${h} A ${r} ${r} 0 0 1 0 ${h - r} L 0 ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
+};
+
+
 interface MindMapModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -1255,26 +1268,27 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             const colorStyles = (() => {
               switch (node.color) {
                 case 'cyan':
-                  return { bg: 'bg-[#09182d]/90', border: 'border-cyan-500/70', shadow: 'shadow-[0_0_20px_rgba(34,211,238,0.2)]', text: 'text-cyan-200', handleBg: 'bg-cyan-400 shadow-[0_0_10px_#22d3ee]' };
+                  return { hex: '#22d3ee', bg: 'bg-[#09182d]/90', border: 'border-cyan-500/70', shadow: 'shadow-[0_0_20px_rgba(34,211,238,0.2)]', text: 'text-cyan-200', handleBg: 'bg-cyan-400 shadow-[0_0_10px_#22d3ee]' };
                 case 'emerald':
-                  return { bg: 'bg-[#062419]/90', border: 'border-emerald-500/70', shadow: 'shadow-[0_0_20px_rgba(16,185,129,0.2)]', text: 'text-emerald-200', handleBg: 'bg-emerald-400 shadow-[0_0_10px_#10b981]' };
+                  return { hex: '#10b981', bg: 'bg-[#062419]/90', border: 'border-emerald-500/70', shadow: 'shadow-[0_0_20px_rgba(16,185,129,0.2)]', text: 'text-emerald-200', handleBg: 'bg-emerald-400 shadow-[0_0_10px_#10b981]' };
                 case 'amber':
-                  return { bg: 'bg-[#291e03]/90', border: 'border-amber-500/70', shadow: 'shadow-[0_0_20px_rgba(245,158,11,0.2)]', text: 'text-amber-200', handleBg: 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' };
+                  return { hex: '#f59e0b', bg: 'bg-[#291e03]/90', border: 'border-amber-500/70', shadow: 'shadow-[0_0_20px_rgba(245,158,11,0.2)]', text: 'text-amber-200', handleBg: 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' };
                 case 'rose':
-                  return { bg: 'bg-[#280715]/90', border: 'border-rose-500/70', shadow: 'shadow-[0_0_20px_rgba(244,63,94,0.2)]', text: 'text-rose-200', handleBg: 'bg-rose-400 shadow-[0_0_10px_#f43f5e]' };
+                  return { hex: '#f43f5e', bg: 'bg-[#280715]/90', border: 'border-rose-500/70', shadow: 'shadow-[0_0_20px_rgba(244,63,94,0.2)]', text: 'text-rose-200', handleBg: 'bg-rose-400 shadow-[0_0_10px_#f43f5e]' };
                 case 'purple':
-                  return { bg: 'bg-[#150533]/90', border: 'border-purple-500/70', shadow: 'shadow-[0_0_20px_rgba(168,85,247,0.2)]', text: 'text-purple-200', handleBg: 'bg-purple-400 shadow-[0_0_10px_#c084fc]' };
+                  return { hex: '#a855f7', bg: 'bg-[#150533]/90', border: 'border-purple-500/70', shadow: 'shadow-[0_0_20px_rgba(168,85,247,0.2)]', text: 'text-purple-200', handleBg: 'bg-purple-400 shadow-[0_0_10px_#c084fc]' };
                 case 'yellow':
-                  return { bg: 'bg-[#282104]/90', border: 'border-yellow-400/80', shadow: 'shadow-[0_0_20px_rgba(234,179,8,0.2)]', text: 'text-yellow-200', handleBg: 'bg-yellow-400 shadow-[0_0_10px_#facc15]' };
+                  return { hex: '#eab308', bg: 'bg-[#282104]/90', border: 'border-yellow-400/80', shadow: 'shadow-[0_0_20px_rgba(234,179,8,0.2)]', text: 'text-yellow-200', handleBg: 'bg-yellow-400 shadow-[0_0_10px_#facc15]' };
                 case 'white':
-                  return { bg: 'bg-[#12131f]/90', border: 'border-slate-300/80', shadow: 'shadow-[0_0_20px_rgba(255,255,255,0.2)]', text: 'text-slate-100', handleBg: 'bg-slate-200 shadow-[0_0_10px_#f1f5f9]' };
+                  return { hex: '#e2e8f0', bg: 'bg-[#12131f]/90', border: 'border-slate-300/80', shadow: 'shadow-[0_0_20px_rgba(255,255,255,0.2)]', text: 'text-slate-100', handleBg: 'bg-slate-200 shadow-[0_0_10px_#f1f5f9]' };
                 default:
-                  return { bg: 'bg-[#150533]/90', border: 'border-fuchsia-500/70', shadow: 'shadow-[0_0_20px_rgba(217,70,239,0.2)]', text: 'text-fuchsia-200', handleBg: 'bg-fuchsia-400 shadow-[0_0_10px_#d946ef]' };
+                  return { hex: '#d946ef', bg: 'bg-[#150533]/90', border: 'border-fuchsia-500/70', shadow: 'shadow-[0_0_20px_rgba(217,70,239,0.2)]', text: 'text-fuchsia-200', handleBg: 'bg-fuchsia-400 shadow-[0_0_10px_#d946ef]' };
               }
             })();
 
             const titleFontPx = getNodeTitleFontSize(node);
             const bodyFontPx = getNodeContentFontSize(node);
+            const nodePath = getNodePath(node.width, node.height, node.shape);
 
             return (
               <div
@@ -1285,12 +1299,46 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                   height: `${node.height}px`,
                 }}
                 onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                className={`absolute top-0 left-0 rounded-2xl pointer-events-auto flex flex-col backdrop-blur-md transition-shadow duration-200 border group ${colorStyles.bg} ${colorStyles.border} ${colorStyles.shadow} ${
+                className={`absolute top-0 left-0 pointer-events-auto flex flex-col backdrop-blur-md transition-shadow duration-200 border group ${colorStyles.bg} ${colorStyles.border} ${colorStyles.shadow} ${
+                  node.shape === 'circle' ? 'rounded-[100px]' : 'rounded-2xl'
+                } ${
                   isSelected
                     ? 'ring-2 ring-cyan-300 ring-offset-2 ring-offset-[#090314] shadow-[0_0_30px_rgba(6,182,212,0.5)] z-10'
                     : ''
                 } ${isConnecting ? 'ring-2 ring-amber-400 animate-pulse' : ''}`}
               >
+                {/* Thin Moving Border Lights */}
+                <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-20">
+                  {/* Clockwise Light (Moves Right from Top) */}
+                  <path
+                    d={nodePath}
+                    fill="none"
+                    stroke={colorStyles.hex}
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                    pathLength="100"
+                    strokeDasharray="14 86"
+                    className="animate-orbit-cw"
+                    style={{
+                      filter: `drop-shadow(0 0 3px ${colorStyles.hex})`,
+                    }}
+                  />
+                  {/* Counter-Clockwise Light (Moves Left from Top) */}
+                  <path
+                    d={nodePath}
+                    fill="none"
+                    stroke={colorStyles.hex}
+                    strokeWidth="1.2"
+                    strokeLinecap="round"
+                    pathLength="100"
+                    strokeDasharray="14 86"
+                    className="animate-orbit-ccw"
+                    style={{
+                      filter: `drop-shadow(0 0 3px ${colorStyles.hex})`,
+                    }}
+                  />
+                </svg>
+
                 {/* 4 Edge Resizing Handles */}
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'n', e)}
