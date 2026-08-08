@@ -61,8 +61,18 @@ export default function App() {
   const [isMinimized, setIsMinimized] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
 
-  // Reference for interval
+  // Reference for interval and exact end time
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const endTimeRef = useRef<number | null>(null);
+
+  const activeSessionRef = useRef(activeSession);
+  useEffect(() => { activeSessionRef.current = activeSession; }, [activeSession]);
+
+  const targetSecondsRef = useRef(targetSeconds);
+  useEffect(() => { targetSecondsRef.current = targetSeconds; }, [targetSeconds]);
+
+  const activeTaskNameRef = useRef(activeTaskName);
+  useEffect(() => { activeTaskNameRef.current = activeTaskName; }, [activeTaskName]);
 
   // Save settings on update
   const handleUpdateSettings = (newSettings: Partial<AppSettings>) => {
@@ -91,6 +101,7 @@ export default function App() {
 
     const now = Date.now();
     const sessionId = `session_${now}`;
+    endTimeRef.current = now + remainingSeconds * 1000;
 
     setActiveSession({
       id: sessionId,
@@ -104,16 +115,20 @@ export default function App() {
   // Pause Timer
   const handlePauseTimer = () => {
     setStatus('paused');
+    endTimeRef.current = null;
     if (timerRef.current) clearInterval(timerRef.current);
   };
 
   // Resume Timer
   const handleResumeTimer = () => {
+    const now = Date.now();
+    endTimeRef.current = now + remainingSeconds * 1000;
     setStatus('running');
   };
 
   // Stop & Record Session Early or Normally
   const handleStopAndSaveTimer = () => {
+    endTimeRef.current = null;
     if (timerRef.current) clearInterval(timerRef.current);
 
     if (activeSession) {
@@ -144,57 +159,62 @@ export default function App() {
 
   // Reset Timer
   const handleResetTimer = () => {
+    endTimeRef.current = null;
     if (timerRef.current) clearInterval(timerRef.current);
     setStatus('idle');
     setActiveSession(null);
     setRemainingSeconds(targetSeconds);
   };
 
-  // Main Timer Countdown Loop Effect
+  // Main Timer Countdown Loop Effect (Real Wall-Clock Time Driven)
   useEffect(() => {
     if (status === 'running') {
-      timerRef.current = setInterval(() => {
-        setRemainingSeconds((prev) => {
-          if (prev <= 1) {
-            // Timer Completed!
-            if (timerRef.current) clearInterval(timerRef.current);
+      if (!endTimeRef.current) {
+        endTimeRef.current = Date.now() + remainingSeconds * 1000;
+      }
 
-            // Record completed session
-            const now = Date.now();
-            if (activeSession) {
-              const completedSession: FocusSession = {
-                id: activeSession.id,
-                startTime: activeSession.startTime,
-                endTime: now,
-                durationSeconds: targetSeconds,
-                elapsedSeconds: targetSeconds,
-                taskName: activeTaskName,
-                completed: true,
-                dateStr: getTodayDateStr(),
-              };
+      const tick = () => {
+        if (!endTimeRef.current) return;
+        const now = Date.now();
+        const diffSec = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
 
-              saveSession(completedSession);
-              setSessions(loadSessions());
-            }
+        if (diffSec <= 0) {
+          if (timerRef.current) clearInterval(timerRef.current);
 
-            setStatus('completed');
-            setLastCompletedDuration(targetSeconds);
-            setIsNotificationOpen(true);
-            setActiveSession(null);
+          const endNow = Date.now();
+          if (activeSessionRef.current) {
+            const completedSession: FocusSession = {
+              id: activeSessionRef.current.id,
+              startTime: activeSessionRef.current.startTime,
+              endTime: endNow,
+              durationSeconds: targetSecondsRef.current,
+              elapsedSeconds: targetSecondsRef.current,
+              taskName: activeTaskNameRef.current,
+              completed: true,
+              dateStr: getTodayDateStr(),
+            };
 
-            return 0;
+            saveSession(completedSession);
+            setSessions(loadSessions());
           }
 
-          // Update active session elapsed
-          if (activeSession) {
-            setActiveSession((a) =>
-              a ? { ...a, elapsedSeconds: targetSeconds - (prev - 1) } : null
-            );
+          endTimeRef.current = null;
+          setStatus('completed');
+          setLastCompletedDuration(targetSecondsRef.current);
+          setIsNotificationOpen(true);
+          setActiveSession(null);
+          setRemainingSeconds(0);
+        } else {
+          setRemainingSeconds(diffSec);
+          if (activeSessionRef.current) {
+            const newElapsed = targetSecondsRef.current - diffSec;
+            setActiveSession((a) => (a ? { ...a, elapsedSeconds: newElapsed } : null));
           }
+        }
+      };
 
-          return prev - 1;
-        });
-      }, 1000);
+      tick();
+      timerRef.current = setInterval(tick, 250);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
     }
@@ -202,7 +222,26 @@ export default function App() {
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };
-  }, [status, targetSeconds, activeSession, activeTaskName]);
+  }, [status]);
+
+  // Sync timer immediately when tab/window gains focus or visibility changes
+  useEffect(() => {
+    const handleSyncOnWakeup = () => {
+      if (status === 'running' && endTimeRef.current) {
+        const now = Date.now();
+        const diffSec = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
+        setRemainingSeconds(diffSec <= 0 ? 0 : diffSec);
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleSyncOnWakeup);
+    window.addEventListener('focus', handleSyncOnWakeup);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleSyncOnWakeup);
+      window.removeEventListener('focus', handleSyncOnWakeup);
+    };
+  }, [status]);
 
   // Update Window Title Bar dynamically with countdown timer
   useEffect(() => {
