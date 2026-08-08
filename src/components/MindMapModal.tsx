@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   X,
   Plus,
+  Minus,
   Trash2,
   ZoomIn,
   ZoomOut,
@@ -21,7 +22,12 @@ import {
   LayoutGrid,
   Lock,
   Unlock,
-  Pencil
+  Pencil,
+  Tag,
+  StickyNote,
+  Bold,
+  Italic,
+  Palette
 } from 'lucide-react';
 
 export interface MindMapTodo {
@@ -37,11 +43,16 @@ export interface MindMapNode {
   width: number;
   height: number;
   title: string;
-  shape: 'rectangle' | 'square' | 'rounded' | 'header';
-  color: 'cyan' | 'fuchsia' | 'emerald' | 'amber' | 'purple';
+  shape: 'rectangle' | 'square' | 'rounded' | 'header' | 'label' | 'note';
+  color: 'cyan' | 'fuchsia' | 'emerald' | 'amber' | 'purple' | 'rose' | 'yellow' | 'white';
   todos: MindMapTodo[];
   notes?: string;
   isLocked?: boolean;
+  fontSize?: number | 'sm' | 'base' | 'lg' | 'xl' | '2xl';
+  titleFontSize?: number;
+  contentFontSize?: number;
+  isBold?: boolean;
+  isItalic?: boolean;
 }
 
 export interface MindMapConnection {
@@ -193,6 +204,13 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   // Todo Item Editing state
   const [editingTodo, setEditingTodo] = useState<{ nodeId: string; todoId: string; text: string } | null>(null);
 
+  // Formatting menu open state per node & font size target ('title' | 'body')
+  const [openFormatMenuNodeId, setOpenFormatMenuNodeId] = useState<string | null>(null);
+  const [fontSizeTargetMap, setFontSizeTargetMap] = useState<Record<string, 'title' | 'body'>>({});
+
+  // Delete Confirmation state
+  const [nodeToDelete, setNodeToDelete] = useState<MindMapNode | null>(null);
+
   // Fullscreen state
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -263,6 +281,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   // Canvas Mouse Down (Start Pan or deselect)
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
+    setOpenFormatMenuNodeId(null);
     if ((e.target as HTMLElement).getAttribute('data-canvas-bg') === 'true') {
       setIsPanning(true);
       setStartPanMouse({ x: e.clientX - pan.x, y: e.clientY - pan.y });
@@ -300,20 +319,20 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
             // Right edge (Width)
             if (side === 'e' || side === 'se' || side === 'ne') {
-              newWidth = Math.max(160, resizingState.startWidth + dx);
+              newWidth = Math.max(120, resizingState.startWidth + dx);
             }
             // Left edge (Width + X position)
             if (side === 'w' || side === 'sw' || side === 'nw') {
-              newWidth = Math.max(160, resizingState.startWidth - dx);
+              newWidth = Math.max(120, resizingState.startWidth - dx);
               newX = resizingState.startX + (resizingState.startWidth - newWidth);
             }
             // Bottom edge (Height)
             if (side === 's' || side === 'se' || side === 'sw') {
-              newHeight = Math.max(120, resizingState.startHeight + dy);
+              newHeight = Math.max(75, resizingState.startHeight + dy);
             }
             // Top edge (Height + Y position)
             if (side === 'n' || side === 'ne' || side === 'nw') {
-              newHeight = Math.max(120, resizingState.startHeight - dy);
+              newHeight = Math.max(75, resizingState.startHeight - dy);
               newY = resizingState.startY + (resizingState.startHeight - newHeight);
             }
 
@@ -373,6 +392,87 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     setZoom((prev) => Math.min(Math.max(prev * zoomFactor, 0.25), 2.5));
   };
 
+  // Node Formatting Handlers
+  const handleToggleNodeBold = (nodeId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setNodes((prev) =>
+      prev.map((n) => (n.id === nodeId ? { ...n, isBold: !n.isBold } : n))
+    );
+  };
+
+  const handleToggleNodeItalic = (nodeId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setNodes((prev) =>
+      prev.map((n) => (n.id === nodeId ? { ...n, isItalic: !n.isItalic } : n))
+    );
+  };
+
+  const getNodeFontSizeNum = (fontSize?: number | string): number => {
+    if (typeof fontSize === 'number') return fontSize;
+    if (fontSize === 'sm') return 12;
+    if (fontSize === 'base') return 14;
+    if (fontSize === 'lg') return 16;
+    if (fontSize === 'xl') return 20;
+    if (fontSize === '2xl') return 24;
+    return 14;
+  };
+
+  const getNodeTitleFontSize = (node: MindMapNode): number => {
+    if (typeof node.titleFontSize === 'number') return node.titleFontSize;
+    if (typeof node.fontSize === 'number') return node.fontSize;
+    return getNodeFontSizeNum(node.fontSize);
+  };
+
+  const getNodeContentFontSize = (node: MindMapNode): number => {
+    if (typeof node.contentFontSize === 'number') return node.contentFontSize;
+    return 12;
+  };
+
+  const handleSetNodeFontSize = (
+    nodeId: string,
+    target: 'title' | 'body',
+    fontSize: number,
+    e?: React.MouseEvent
+  ) => {
+    if (e) e.stopPropagation();
+    const clamped = Math.max(8, Math.min(60, fontSize));
+    setNodes((prev) =>
+      prev.map((n) => {
+        if (n.id !== nodeId) return n;
+        const currentTitle = getNodeTitleFontSize(n);
+        const currentContent = getNodeContentFontSize(n);
+
+        if (target === 'title') {
+          return {
+            ...n,
+            titleFontSize: clamped,
+            contentFontSize: n.contentFontSize ?? currentContent,
+            fontSize: clamped,
+          };
+        } else {
+          return {
+            ...n,
+            titleFontSize: n.titleFontSize ?? currentTitle,
+            contentFontSize: clamped,
+          };
+        }
+      })
+    );
+  };
+
+  const handleChangeNodeColor = (nodeId: string, color: MindMapNode['color'], e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setNodes((prev) =>
+      prev.map((n) => (n.id === nodeId ? { ...n, color } : n))
+    );
+  };
+
+  const handleUpdateNotes = (nodeId: string, notes: string) => {
+    setNodes((prev) =>
+      prev.map((n) => (n.id === nodeId ? { ...n, notes } : n))
+    );
+  };
+
   // Add Node
   const handleAddNode = (shape: MindMapNode['shape'] = 'rectangle', color: MindMapNode['color'] = 'fuchsia') => {
     // Position exactly in the center of current visible canvas viewport
@@ -380,8 +480,37 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     const viewWidth = container?.clientWidth || window.innerWidth;
     const viewHeight = container?.clientHeight || (window.innerHeight - 64);
 
-    const nodeWidth = shape === 'square' ? 220 : 270;
-    const nodeHeight = 210;
+    let nodeWidth = 270;
+    let nodeHeight = 210;
+    let defaultTitle = 'کار / نود جدید';
+    let defaultColor: MindMapNode['color'] = color;
+    let defaultFontSize: MindMapNode['fontSize'] = 'base';
+    let defaultIsBold = false;
+
+    if (shape === 'square') {
+      nodeWidth = 220;
+      nodeHeight = 210;
+    } else if (shape === 'header') {
+      nodeWidth = 280;
+      nodeHeight = 160;
+      defaultTitle = 'عنوان جدید';
+      defaultColor = 'emerald';
+      defaultIsBold = true;
+    } else if (shape === 'label') {
+      nodeWidth = 200;
+      nodeHeight = 90;
+      defaultTitle = 'لیبل جدید';
+      defaultColor = 'cyan';
+      defaultFontSize = 'base';
+      defaultIsBold = true;
+    } else if (shape === 'note') {
+      nodeWidth = 250;
+      nodeHeight = 180;
+      defaultTitle = 'یادداشت جدید';
+      defaultColor = 'amber';
+      defaultFontSize = 'sm';
+      defaultIsBold = false;
+    }
 
     const canvasCenterX = (viewWidth / 2 - pan.x) / zoom;
     const canvasCenterY = (viewHeight / 2 - pan.y) / zoom;
@@ -395,10 +524,14 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
       y: canvasCenterY - nodeHeight / 2 + cascadeOffset,
       width: nodeWidth,
       height: nodeHeight,
-      title: shape === 'header' ? 'عنوان جدید (New Category)' : 'کار / نود جدید (New Task Node)',
+      title: defaultTitle,
+      notes: shape === 'note' ? 'متن یادداشت را اینجا بنویسید...' : undefined,
       shape,
-      color,
-      todos: [
+      color: defaultColor,
+      fontSize: defaultFontSize,
+      isBold: defaultIsBold,
+      isItalic: false,
+      todos: shape === 'label' || shape === 'note' ? [] : [
         { id: `t_${Date.now()}_1`, text: 'اولین آیتم لیست کارها', completed: false },
       ],
     };
@@ -407,13 +540,20 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     setSelectedNodeId(newNode.id);
   };
 
-  // Delete Node
-  const handleDeleteNode = (id: string, e?: React.MouseEvent) => {
+  // Delete Node Request & Confirm
+  const handleDeleteNodeRequest = (node: MindMapNode, e?: React.MouseEvent) => {
     e?.stopPropagation();
+    setNodeToDelete(node);
+  };
+
+  const handleConfirmDeleteNode = () => {
+    if (!nodeToDelete) return;
+    const id = nodeToDelete.id;
     setNodes((prev) => prev.filter((n) => n.id !== id));
     setConnections((prev) => prev.filter((c) => c.fromNodeId !== id && c.toNodeId !== id));
     if (selectedNodeId === id) setSelectedNodeId(null);
     if (connectingFromId === id) setConnectingFromId(null);
+    setNodeToDelete(null);
   };
 
   // Node Drag Start
@@ -614,27 +754,24 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     >
       {/* Top Cyberpunk Toolbar */}
       <header className="h-16 px-4 sm:px-6 bg-[#0d0221]/95 border-b border-fuchsia-900/60 flex items-center justify-between gap-4 backdrop-blur-md z-20">
-        {/* Left: Title & Info */}
+        {/* Left: Title */}
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-r from-fuchsia-600 via-pink-600 to-purple-600 flex items-center justify-center shadow-[0_0_15px_rgba(217,70,239,0.5)]">
             <Network className="w-5 h-5 text-white" />
           </div>
           <div>
-            <h2 className="text-sm sm:text-base font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-fuchsia-200 to-pink-300 flex items-center gap-2">
-              <span>Mind Map & Diagram Canvas (نقشه ذهنی کارها)</span>
+            <h2 className="text-base sm:text-lg font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-fuchsia-200 to-pink-300">
+              Mind Map
             </h2>
-            <p className="text-[11px] text-fuchsia-300/80 hidden sm:block">
-              بوم بی‌نهایت دیاگرام با قابلیت ساخت مستطیل/مربع، اتصال فلش‌ها، و چک‌باکس لیست کارها
-            </p>
           </div>
         </div>
 
-        {/* Center Actions: Add Shapes, Connections */}
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Fullscreen Button - First item before rectangle */}
+        {/* Center Actions: Add Shapes, Connections, Labels, Notes */}
+        <div className="flex items-center gap-1.5 sm:gap-2 overflow-x-auto py-1">
+          {/* Fullscreen Button */}
           <button
             onClick={handleToggleFullscreen}
-            className={`px-3 py-1.5 rounded-xl transition border text-xs font-bold flex items-center gap-1.5 ${
+            className={`px-3 py-1.5 rounded-xl transition border text-xs font-bold flex items-center gap-1.5 shrink-0 ${
               isFullscreen
                 ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-[0_0_12px_rgba(217,70,239,0.5)]'
                 : 'bg-[#150533] hover:bg-fuchsia-950 border-fuchsia-800/60 text-fuchsia-200 shadow-[0_0_10px_rgba(217,70,239,0.2)]'
@@ -645,10 +782,30 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             <span className="hidden sm:inline">{isFullscreen ? 'خروج تمام‌صفحه' : 'تمام‌صفحه'}</span>
           </button>
 
+          {/* Add Label Button - Directly next to Fullscreen */}
+          <button
+            onClick={() => handleAddNode('label', 'cyan')}
+            className="px-3 py-1.5 rounded-xl bg-cyan-950/80 hover:bg-cyan-900 border border-cyan-600/70 text-cyan-200 text-xs font-bold transition flex items-center gap-1.5 shadow-[0_0_10px_rgba(34,211,238,0.25)] shrink-0"
+            title="افزودن لیبل متنی (Label)"
+          >
+            <Tag className="w-3.5 h-3.5 text-cyan-400" />
+            <span>+ لیبل</span>
+          </button>
+
+          {/* Add Note Button - Directly next to Label */}
+          <button
+            onClick={() => handleAddNode('note', 'amber')}
+            className="px-3 py-1.5 rounded-xl bg-amber-950/80 hover:bg-amber-900 border border-amber-600/70 text-amber-200 text-xs font-bold transition flex items-center gap-1.5 shadow-[0_0_10px_rgba(245,158,11,0.25)] shrink-0"
+            title="افزودن یادداشت (Note)"
+          >
+            <StickyNote className="w-3.5 h-3.5 text-amber-400" />
+            <span>+ یادداشت</span>
+          </button>
+
           {/* Add Rectangle */}
           <button
             onClick={() => handleAddNode('rectangle', 'fuchsia')}
-            className="px-3 py-1.5 rounded-xl bg-fuchsia-950/80 hover:bg-fuchsia-900 border border-fuchsia-700/60 text-fuchsia-100 text-xs font-bold transition flex items-center gap-1.5 shadow-[0_0_10px_rgba(217,70,239,0.2)]"
+            className="px-3 py-1.5 rounded-xl bg-fuchsia-950/80 hover:bg-fuchsia-900 border border-fuchsia-700/60 text-fuchsia-100 text-xs font-bold transition flex items-center gap-1.5 shadow-[0_0_10px_rgba(217,70,239,0.2)] shrink-0"
             title="افزودن نود مستطیل"
           >
             <Plus className="w-3.5 h-3.5 text-fuchsia-400" />
@@ -919,6 +1076,30 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             const isSelected = selectedNodeId === node.id;
             const isConnecting = connectingFromId === node.id;
 
+            const colorStyles = (() => {
+              switch (node.color) {
+                case 'cyan':
+                  return { bg: 'bg-[#09182d]/90', border: 'border-cyan-500/70', shadow: 'shadow-[0_0_20px_rgba(34,211,238,0.2)]', text: 'text-cyan-200', handleBg: 'bg-cyan-400 shadow-[0_0_10px_#22d3ee]' };
+                case 'emerald':
+                  return { bg: 'bg-[#062419]/90', border: 'border-emerald-500/70', shadow: 'shadow-[0_0_20px_rgba(16,185,129,0.2)]', text: 'text-emerald-200', handleBg: 'bg-emerald-400 shadow-[0_0_10px_#10b981]' };
+                case 'amber':
+                  return { bg: 'bg-[#291e03]/90', border: 'border-amber-500/70', shadow: 'shadow-[0_0_20px_rgba(245,158,11,0.2)]', text: 'text-amber-200', handleBg: 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' };
+                case 'rose':
+                  return { bg: 'bg-[#280715]/90', border: 'border-rose-500/70', shadow: 'shadow-[0_0_20px_rgba(244,63,94,0.2)]', text: 'text-rose-200', handleBg: 'bg-rose-400 shadow-[0_0_10px_#f43f5e]' };
+                case 'purple':
+                  return { bg: 'bg-[#150533]/90', border: 'border-purple-500/70', shadow: 'shadow-[0_0_20px_rgba(168,85,247,0.2)]', text: 'text-purple-200', handleBg: 'bg-purple-400 shadow-[0_0_10px_#c084fc]' };
+                case 'yellow':
+                  return { bg: 'bg-[#282104]/90', border: 'border-yellow-400/80', shadow: 'shadow-[0_0_20px_rgba(234,179,8,0.2)]', text: 'text-yellow-200', handleBg: 'bg-yellow-400 shadow-[0_0_10px_#facc15]' };
+                case 'white':
+                  return { bg: 'bg-[#12131f]/90', border: 'border-slate-300/80', shadow: 'shadow-[0_0_20px_rgba(255,255,255,0.2)]', text: 'text-slate-100', handleBg: 'bg-slate-200 shadow-[0_0_10px_#f1f5f9]' };
+                default:
+                  return { bg: 'bg-[#150533]/90', border: 'border-fuchsia-500/70', shadow: 'shadow-[0_0_20px_rgba(217,70,239,0.2)]', text: 'text-fuchsia-200', handleBg: 'bg-fuchsia-400 shadow-[0_0_10px_#d946ef]' };
+              }
+            })();
+
+            const titleFontPx = getNodeTitleFontSize(node);
+            const bodyFontPx = getNodeContentFontSize(node);
+
             return (
               <div
                 key={node.id}
@@ -928,125 +1109,333 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                   height: `${node.height}px`,
                 }}
                 onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                className={`absolute top-0 left-0 rounded-2xl pointer-events-auto flex flex-col backdrop-blur-md transition-shadow duration-200 border group ${
-                  node.color === 'cyan'
-                    ? 'bg-[#09182d]/90 border-cyan-500/60 shadow-[0_0_20px_rgba(6,182,212,0.2)]'
-                    : node.color === 'emerald'
-                    ? 'bg-[#062419]/90 border-emerald-500/60 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
-                    : node.color === 'amber'
-                    ? 'bg-[#291e03]/90 border-amber-500/60 shadow-[0_0_20px_rgba(245,158,11,0.2)]'
-                    : 'bg-[#150533]/90 border-fuchsia-500/60 shadow-[0_0_20px_rgba(217,70,239,0.2)]'
-                } ${
+                className={`absolute top-0 left-0 rounded-2xl pointer-events-auto flex flex-col backdrop-blur-md transition-shadow duration-200 border group ${colorStyles.bg} ${colorStyles.border} ${colorStyles.shadow} ${
                   isSelected
                     ? 'ring-2 ring-cyan-300 ring-offset-2 ring-offset-[#090314] shadow-[0_0_30px_rgba(6,182,212,0.5)] z-10'
                     : ''
                 } ${isConnecting ? 'ring-2 ring-amber-400 animate-pulse' : ''}`}
               >
-                {/* 4 Edge Resizing Handles (Top/Bottom adjust height, Left/Right adjust width) */}
+                {/* 4 Edge Resizing Handles */}
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'n', e)}
-                  className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-2 bg-cyan-400 border border-[#090314] rounded-full cursor-ns-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  className={`absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-10 h-2 ${colorStyles.handleBg} border border-[#090314] rounded-full cursor-ns-resize z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
-                  title="تغییر ارتفاع از بالا (Resize Height Top)"
+                  title="تغییر ارتفاع از بالا"
                 />
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 's', e)}
-                  className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-10 h-2 bg-cyan-400 border border-[#090314] rounded-full cursor-ns-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  className={`absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-10 h-2 ${colorStyles.handleBg} border border-[#090314] rounded-full cursor-ns-resize z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
-                  title="تغییر ارتفاع از پایین (Resize Height Bottom)"
+                  title="تغییر ارتفاع از پایین"
                 />
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'w', e)}
-                  className={`absolute top-1/2 left-0 -translate-x-1/2 -translate-y-1/2 h-10 w-2 bg-cyan-400 border border-[#090314] rounded-full cursor-ew-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  className={`absolute top-1/2 left-0 -translate-x-1/2 -translate-y-1/2 h-10 w-2 ${colorStyles.handleBg} border border-[#090314] rounded-full cursor-ew-resize z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
-                  title="تغییر طول/عرض از چپ (Resize Width Left)"
+                  title="تغییر عرض از چپ"
                 />
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'e', e)}
-                  className={`absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 h-10 w-2 bg-cyan-400 border border-[#090314] rounded-full cursor-ew-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  className={`absolute top-1/2 right-0 translate-x-1/2 -translate-y-1/2 h-10 w-2 ${colorStyles.handleBg} border border-[#090314] rounded-full cursor-ew-resize z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
-                  title="تغییر طول/عرض از راست (Resize Width Right)"
+                  title="تغییر عرض از راست"
                 />
 
                 {/* 4 Corner Resizing Handles */}
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'se', e)}
-                  className={`absolute bottom-0 right-0 w-3.5 h-3.5 bg-cyan-400 border-2 border-[#090314] rounded-full translate-x-1/2 translate-y-1/2 cursor-se-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  className={`absolute bottom-0 right-0 w-3.5 h-3.5 ${colorStyles.handleBg} border-2 border-[#090314] rounded-full translate-x-1/2 translate-y-1/2 cursor-se-resize z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
                   title="تغییر اندازه از گوشه"
                 />
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'sw', e)}
-                  className={`absolute bottom-0 left-0 w-3.5 h-3.5 bg-cyan-400 border-2 border-[#090314] rounded-full -translate-x-1/2 translate-y-1/2 cursor-sw-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  className={`absolute bottom-0 left-0 w-3.5 h-3.5 ${colorStyles.handleBg} border-2 border-[#090314] rounded-full -translate-x-1/2 translate-y-1/2 cursor-sw-resize z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
                   title="تغییر اندازه از گوشه"
                 />
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'ne', e)}
-                  className={`absolute top-0 right-0 w-3.5 h-3.5 bg-cyan-400 border-2 border-[#090314] rounded-full translate-x-1/2 -translate-y-1/2 cursor-ne-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  className={`absolute top-0 right-0 w-3.5 h-3.5 ${colorStyles.handleBg} border-2 border-[#090314] rounded-full translate-x-1/2 -translate-y-1/2 cursor-ne-resize z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
                   title="تغییر اندازه از گوشه"
                 />
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'nw', e)}
-                  className={`absolute top-0 left-0 w-3.5 h-3.5 bg-cyan-400 border-2 border-[#090314] rounded-full -translate-x-1/2 -translate-y-1/2 cursor-nw-resize shadow-[0_0_10px_#22d3ee] z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
+                  className={`absolute top-0 left-0 w-3.5 h-3.5 ${colorStyles.handleBg} border-2 border-[#090314] rounded-full -translate-x-1/2 -translate-y-1/2 cursor-nw-resize z-30 hover:scale-125 transition-all opacity-0 group-hover:opacity-100 ${
                     isSelected ? 'opacity-100' : ''
                   }`}
                   title="تغییر اندازه از گوشه"
                 />
 
                 {/* Node Title Bar & Controls */}
-                <div className="p-2.5 border-b border-fuchsia-900/50 flex items-center justify-between gap-2 bg-[#0d0221]/80 rounded-t-2xl cursor-grab active:cursor-grabbing">
-                  <input
-                    type="text"
-                    dir="rtl"
-                    value={node.title}
-                    onChange={(e) => handleUpdateTitle(node.id, e.target.value)}
-                    className="bg-transparent text-[12px] font-extrabold text-fuchsia-100 outline-none w-full border-b border-transparent focus:border-fuchsia-400 transition text-right"
-                  />
+                <div className="p-1.5 border-b border-fuchsia-900/50 flex items-center justify-between gap-1 bg-[#0d0221]/80 rounded-t-2xl cursor-grab active:cursor-grabbing flex-wrap min-w-0">
+                  <div className="flex items-center gap-1 flex-1 min-w-0" dir="rtl">
+                    {node.shape === 'label' ? (
+                      <span className="text-[11px] font-bold text-cyan-300 flex items-center gap-1">
+                        <Tag className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+                        لیبل
+                      </span>
+                    ) : node.shape === 'note' ? (
+                      <span className="text-[11px] font-bold text-amber-300 flex items-center gap-1">
+                        <StickyNote className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        یادداشت
+                      </span>
+                    ) : (
+                      <input
+                        type="text"
+                        dir="rtl"
+                        value={node.title}
+                        onChange={(e) => handleUpdateTitle(node.id, e.target.value)}
+                        style={{ fontSize: `${titleFontPx}px` }}
+                        className={`bg-transparent outline-none flex-1 min-w-0 border-b border-transparent focus:border-fuchsia-400 transition text-right ${
+                          node.isBold ? 'font-bold' : 'font-normal'
+                        } ${node.isItalic ? 'italic' : ''} ${colorStyles.text}`}
+                        placeholder="عنوان نود..."
+                      />
+                    )}
+                  </div>
 
-                  {/* Connect, Lock & Delete Node Buttons */}
+                  {/* Formatting & Action Controls */}
                   <div className="flex items-center gap-1 shrink-0">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setConnectingFromId(connectingFromId === node.id ? null : node.id);
-                      }}
-                      className={`p-1 rounded-lg border transition ${
-                        isConnecting
-                          ? 'bg-amber-500 text-black border-amber-400'
-                          : 'bg-fuchsia-950 hover:bg-fuchsia-900 text-cyan-300 border-fuchsia-800/60'
-                      }`}
-                      title="اتصال این نود به نود دیگر"
-                    >
-                      <Link2 className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Combined Formatting Menu Button (Palette Icon) */}
+                    <div className="relative">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setOpenFormatMenuNodeId((prev) => (prev === node.id ? null : node.id));
+                        }}
+                        className={`p-1 rounded-lg border transition flex items-center justify-center ${
+                          openFormatMenuNodeId === node.id
+                            ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-[0_0_12px_rgba(217,70,239,0.7)]'
+                            : 'bg-fuchsia-950/80 hover:bg-fuchsia-900 text-fuchsia-200 border-fuchsia-800/60'
+                        }`}
+                        title="تنظیمات استایل، فونت و رنگ"
+                      >
+                        <Palette className="w-3.5 h-3.5" />
+                      </button>
 
-                    <button
-                      onClick={(e) => handleToggleLockNode(node.id, e)}
-                      className={`p-1 rounded-lg border transition ${
-                        node.isLocked
-                          ? 'bg-amber-500/20 text-amber-300 border-amber-500/80 hover:bg-amber-500/30 shadow-[0_0_8px_rgba(245,158,11,0.3)]'
-                          : 'bg-fuchsia-950 hover:bg-fuchsia-900 text-fuchsia-300 border-fuchsia-800/60'
-                      }`}
-                      title={node.isLocked ? 'باز کردن قفل افزودن کار جدید' : 'قفل کردن افزودن کار جدید'}
-                    >
-                      {node.isLocked ? (
-                        <Lock className="w-3.5 h-3.5 text-amber-400" />
-                      ) : (
-                        <Unlock className="w-3.5 h-3.5" />
+                      {/* Upwards Formatting Popover */}
+                      {openFormatMenuNodeId === node.id && (
+                        <div
+                          onClick={(e) => e.stopPropagation()}
+                          className="absolute bottom-full mb-2 right-0 bg-[#0a021b]/95 border border-fuchsia-600/80 rounded-2xl p-3 shadow-[0_0_25px_rgba(217,70,239,0.5)] backdrop-blur-xl flex flex-col gap-2.5 min-w-[220px] z-50"
+                          dir="rtl"
+                        >
+                          <div className="text-[10px] font-bold text-fuchsia-300/80 border-b border-fuchsia-900/50 pb-1 flex items-center justify-between">
+                            <span>تنظیمات استایل، فونت و رنگ</span>
+                          </div>
+
+                          {/* Bold & Italic Row */}
+                          <div className="flex items-center gap-1.5">
+                            {/* Bold */}
+                            <button
+                              onClick={(e) => handleToggleNodeBold(node.id, e)}
+                              className={`flex-1 py-1 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 border ${
+                                node.isBold
+                                  ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-[0_0_10px_rgba(217,70,239,0.5)]'
+                                  : 'bg-[#150533] hover:bg-fuchsia-950 text-fuchsia-200 border-fuchsia-800/60'
+                              }`}
+                              title="Bold (ضخیم)"
+                            >
+                              <Bold className="w-3.5 h-3.5" />
+                              <span>Bold</span>
+                            </button>
+
+                            {/* Italic */}
+                            <button
+                              onClick={(e) => handleToggleNodeItalic(node.id, e)}
+                              className={`flex-1 py-1 rounded-lg text-xs italic font-bold transition flex items-center justify-center gap-1 border ${
+                                node.isItalic
+                                  ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-[0_0_10px_rgba(217,70,239,0.5)]'
+                                  : 'bg-[#150533] hover:bg-fuchsia-950 text-fuchsia-200 border-fuchsia-800/60'
+                              }`}
+                              title="Italic (مورب)"
+                            >
+                              <Italic className="w-3.5 h-3.5" />
+                              <span>Italic</span>
+                            </button>
+                          </div>
+
+                          {/* Font Size Target Scope & Stepper */}
+                          <div className="flex flex-col gap-1.5 pt-1 border-t border-fuchsia-900/40">
+                            {(() => {
+                              const activeTarget = fontSizeTargetMap[node.id] || 'title';
+                              const activePx = activeTarget === 'title' ? titleFontPx : bodyFontPx;
+
+                              return (
+                                <div className="flex flex-col gap-1.5">
+                                  {/* Stepper Header & Controls */}
+                                  <div className="flex items-center justify-between text-[10px] text-fuchsia-300/80 font-bold">
+                                    <span>سایز {activeTarget === 'title' ? 'عنوان' : 'متن بدنه'} (پیکسل):</span>
+                                    <span className="text-cyan-300 font-mono font-bold">{activePx}px</span>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 bg-[#05010d] p-1.5 rounded-xl border border-fuchsia-900/50">
+                                    {/* Decrease button */}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSetNodeFontSize(node.id, activeTarget, Math.max(8, activePx - 1), e);
+                                      }}
+                                      className="p-1.5 rounded-lg bg-[#150533] hover:bg-fuchsia-900 text-fuchsia-200 border border-fuchsia-800/60 transition active:scale-95 shrink-0"
+                                      title="کاهش سایز (-۱)"
+                                    >
+                                      <Minus className="w-3.5 h-3.5" />
+                                    </button>
+
+                                    {/* Numeric Input Field */}
+                                    <div className="flex-1 flex items-center justify-center">
+                                      <input
+                                        type="number"
+                                        min={8}
+                                        max={60}
+                                        value={activePx}
+                                        onChange={(e) => {
+                                          const val = parseInt(e.target.value, 10);
+                                          if (!isNaN(val)) {
+                                            handleSetNodeFontSize(node.id, activeTarget, val);
+                                          }
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="w-full text-center bg-[#0d0221] border border-fuchsia-800/80 rounded-lg py-1 px-1 text-cyan-300 font-extrabold text-xs outline-none focus:border-cyan-400 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                      />
+                                    </div>
+
+                                    {/* Increase button */}
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleSetNodeFontSize(node.id, activeTarget, Math.min(60, activePx + 1), e);
+                                      }}
+                                      className="p-1.5 rounded-lg bg-[#150533] hover:bg-fuchsia-900 text-fuchsia-200 border border-fuchsia-800/60 transition active:scale-95 shrink-0"
+                                      title="افزایش سایز (+۱)"
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+
+                                  {/* Scope Selector: Title vs Body (Placed BELOW stepper) */}
+                                  <div className="flex flex-col gap-1 mt-1">
+                                    <span className="text-[10px] text-fuchsia-300/80 font-bold">انتخاب بخش برای تغییر سایز:</span>
+                                    <div className="flex items-center gap-1.5 bg-[#05010d] p-1 rounded-xl border border-fuchsia-900/50">
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setFontSizeTargetMap((prev) => ({ ...prev, [node.id]: 'title' }));
+                                        }}
+                                        className={`flex-1 py-1 px-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 border ${
+                                          activeTarget === 'title'
+                                            ? 'bg-cyan-500 text-black border-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.7)]'
+                                            : 'bg-[#12042b] hover:bg-fuchsia-950 text-fuchsia-200 border-fuchsia-900/50'
+                                        }`}
+                                        title="تغییر سایز عنوان نود"
+                                      >
+                                        <span>Title (عنوان)</span>
+                                      </button>
+
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setFontSizeTargetMap((prev) => ({ ...prev, [node.id]: 'body' }));
+                                        }}
+                                        className={`flex-1 py-1 px-1.5 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1 border ${
+                                          activeTarget === 'body'
+                                            ? 'bg-cyan-500 text-black border-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.7)]'
+                                            : 'bg-[#12042b] hover:bg-fuchsia-950 text-fuchsia-200 border-fuchsia-900/50'
+                                        }`}
+                                        title="تغییر سایز متن بدنه و کارها"
+                                      >
+                                        <span>Body (متن بدنه)</span>
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })()}
+                          </div>
+
+                          {/* Color Palette Swatches */}
+                          <div className="flex flex-col gap-1 pt-1 border-t border-fuchsia-900/40">
+                            <span className="text-[10px] text-fuchsia-300/80 font-bold">رنگ نود:</span>
+                            <div className="flex items-center justify-between gap-1">
+                              {(['cyan', 'fuchsia', 'emerald', 'amber', 'rose', 'yellow', 'purple', 'white'] as const).map((c) => (
+                                <button
+                                  key={c}
+                                  onClick={(e) => handleChangeNodeColor(node.id, c, e)}
+                                  className={`w-5 h-5 rounded-full transition flex items-center justify-center border border-black/40 ${
+                                    node.color === c
+                                      ? 'scale-125 ring-2 ring-white shadow-[0_0_12px_rgba(255,255,255,0.9)]'
+                                      : 'opacity-75 hover:opacity-100 hover:scale-110'
+                                  }`}
+                                  style={{
+                                    backgroundColor:
+                                      c === 'cyan' ? '#22d3ee' :
+                                      c === 'fuchsia' ? '#d946ef' :
+                                      c === 'emerald' ? '#10b981' :
+                                      c === 'amber' ? '#f59e0b' :
+                                      c === 'rose' ? '#f43f5e' :
+                                      c === 'yellow' ? '#eab308' :
+                                      c === 'purple' ? '#a855f7' :
+                                      '#f8fafc'
+                                  }}
+                                  title={`رنگ ${c}`}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        </div>
                       )}
-                    </button>
+                    </div>
 
+                    {/* Connect & Lock Buttons - ONLY for standard nodes */}
+                    {node.shape !== 'label' && node.shape !== 'note' && (
+                      <>
+                        {/* Connect Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setConnectingFromId(connectingFromId === node.id ? null : node.id);
+                          }}
+                          className={`p-1 rounded-lg border transition ${
+                            isConnecting
+                              ? 'bg-amber-500 text-black border-amber-400'
+                              : 'bg-fuchsia-950 hover:bg-fuchsia-900 text-cyan-300 border-fuchsia-800/60'
+                          }`}
+                          title="اتصال این نود به نود دیگر"
+                        >
+                          <Link2 className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* Lock Button */}
+                        <button
+                          onClick={(e) => handleToggleLockNode(node.id, e)}
+                          className={`p-1 rounded-lg border transition ${
+                            node.isLocked
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/80 hover:bg-amber-500/30 shadow-[0_0_8px_rgba(245,158,11,0.3)]'
+                              : 'bg-fuchsia-950 hover:bg-fuchsia-900 text-fuchsia-300 border-fuchsia-800/60'
+                          }`}
+                          title={node.isLocked ? 'باز کردن قفل' : 'قفل کردن'}
+                        >
+                          {node.isLocked ? (
+                            <Lock className="w-3.5 h-3.5 text-amber-400" />
+                          ) : (
+                            <Unlock className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </>
+                    )}
+
+                    {/* Delete Button */}
                     <button
-                      onClick={(e) => handleDeleteNode(node.id, e)}
+                      onClick={(e) => handleDeleteNodeRequest(node, e)}
                       className="p-1 rounded-lg bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/60 transition"
                       title="حذف نود"
                     >
@@ -1055,133 +1444,167 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                   </div>
                 </div>
 
-                {/* Node Body: List of Todos with Checkboxes */}
-                <div className="p-2.5 flex-1 flex flex-col justify-between space-y-2 overflow-hidden min-h-0">
-                  <div className="space-y-1.5 flex-1 overflow-y-auto pr-1 min-h-0">
-                    {node.todos.map((todo) => {
-                      const isEditingThis =
-                        editingTodo?.nodeId === node.id && editingTodo?.todoId === todo.id;
+                {/* Node Body */}
+                {node.shape === 'label' ? (
+                  <div className="p-2 flex-1 flex flex-col justify-between h-full overflow-hidden min-h-0">
+                    <textarea
+                      dir="rtl"
+                      value={node.notes || ''}
+                      onChange={(e) => handleUpdateNotes(node.id, e.target.value)}
+                      placeholder="متن توصیفی لیبل (اختیاری)..."
+                      style={{ fontSize: `${bodyFontPx}px` }}
+                      className={`w-full flex-1 bg-transparent outline-none resize-none text-right transition ${
+                        node.isBold ? 'font-bold' : 'font-normal'
+                      } ${node.isItalic ? 'italic' : ''} ${colorStyles.text}`}
+                    />
+                  </div>
+                ) : node.shape === 'note' ? (
+                  <div className="p-2 flex-1 flex flex-col justify-between h-full overflow-hidden min-h-0">
+                    <textarea
+                      dir="rtl"
+                      value={node.notes || ''}
+                      onChange={(e) => handleUpdateNotes(node.id, e.target.value)}
+                      placeholder="متن یادداشت را اینجا بنویسید..."
+                      style={{ fontSize: `${bodyFontPx}px` }}
+                      className={`w-full flex-1 bg-transparent outline-none resize-none text-right transition ${
+                        node.isBold ? 'font-bold' : 'font-normal'
+                      } ${node.isItalic ? 'italic' : ''} ${colorStyles.text}`}
+                    />
+                  </div>
+                ) : (
+                  /* Standard Node Body: List of Todos with Checkboxes */
+                  <div className="p-2 flex-1 flex flex-col justify-between space-y-1.5 overflow-hidden min-h-0">
+                    <div className="space-y-1 flex-1 overflow-y-auto pr-1 min-h-0">
+                      {node.todos.map((todo) => {
+                        const isEditingThis =
+                          editingTodo?.nodeId === node.id && editingTodo?.todoId === todo.id;
 
-                      return (
-                        <div
-                          key={todo.id}
-                          dir="rtl"
-                          className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg bg-[#0d0221]/60 border border-fuchsia-900/40 hover:border-fuchsia-700/50 transition group/item"
-                        >
-                          {isEditingThis ? (
-                            /* Inline Edit Mode */
-                            <div className="flex items-center gap-1 flex-1 min-w-0" dir="rtl">
-                              <input
-                                type="text"
-                                autoFocus
-                                dir="rtl"
-                                value={editingTodo.text}
-                                onChange={(e) =>
-                                  setEditingTodo({ ...editingTodo, text: e.target.value })
-                                }
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') {
-                                    e.preventDefault();
-                                    handleSaveEditTodo();
-                                  } else if (e.key === 'Escape') {
-                                    handleCancelEditTodo();
-                                  }
-                                }}
-                                className="flex-1 px-2 py-0.5 text-[12px] rounded bg-[#090314] border border-cyan-400 text-fuchsia-100 outline-none text-right font-medium"
-                              />
-                              {/* Green Checkmark Save Button */}
-                              <button
-                                onClick={handleSaveEditTodo}
-                                className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shrink-0"
-                                title="ذخیره تغییرات (Save)"
-                              >
-                                <Check className="w-3.5 h-3.5" />
-                              </button>
-                              {/* Cancel Button */}
-                              <button
-                                onClick={handleCancelEditTodo}
-                                className="p-1 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-bold transition shrink-0"
-                                title="انصراف (Cancel)"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          ) : (
-                            /* Normal View Mode */
-                            <>
-                              <div className="flex items-center gap-2 flex-1 min-w-0" dir="rtl">
-                                <button
-                                  onClick={() => handleToggleTodo(node.id, todo.id)}
-                                  className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition ${
-                                    todo.completed
-                                      ? 'bg-emerald-500 text-black font-bold'
-                                      : 'border border-fuchsia-600 hover:border-cyan-400'
-                                  }`}
-                                >
-                                  {todo.completed && <Check className="w-3 h-3 stroke-[3]" />}
-                                </button>
-                                <span
+                        return (
+                          <div
+                            key={todo.id}
+                            dir="rtl"
+                            className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg bg-[#0d0221]/60 border border-fuchsia-900/40 hover:border-fuchsia-700/50 transition group/item"
+                          >
+                            {isEditingThis ? (
+                              /* Inline Edit Mode */
+                              <div className="flex items-center gap-1 flex-1 min-w-0" dir="rtl">
+                                <input
+                                  type="text"
+                                  autoFocus
                                   dir="rtl"
-                                  className={`text-[12px] font-medium truncate text-right ${
-                                    todo.completed ? 'line-through text-fuchsia-400/50' : 'text-fuchsia-100'
-                                  }`}
-                                >
-                                  {todo.text}
-                                </span>
-                              </div>
-
-                              {/* Hover buttons: Pencil (Edit) and X (Delete) */}
-                              <div className="flex items-center gap-1 opacity-0 group-hover/item:opacity-100 transition shrink-0">
+                                  value={editingTodo.text}
+                                  onChange={(e) =>
+                                    setEditingTodo({ ...editingTodo, text: e.target.value })
+                                  }
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSaveEditTodo();
+                                    } else if (e.key === 'Escape') {
+                                      handleCancelEditTodo();
+                                    }
+                                  }}
+                                  style={{ fontSize: `${bodyFontPx}px` }}
+                                  className={`flex-1 px-2 py-0.5 rounded bg-[#090314] border border-cyan-400 text-fuchsia-100 outline-none text-right ${
+                                    node.isBold ? 'font-bold' : 'font-normal'
+                                  } ${node.isItalic ? 'italic' : ''}`}
+                                />
                                 <button
-                                  onClick={(e) => handleStartEditTodo(node.id, todo.id, todo.text, e)}
-                                  className="text-cyan-400 hover:text-cyan-300 p-0.5 hover:bg-cyan-950/60 rounded transition"
-                                  title="ویرایش کار (Edit)"
+                                  onClick={handleSaveEditTodo}
+                                  className="p-1 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-bold transition shrink-0"
+                                  title="ذخیره تغییرات"
                                 >
-                                  <Pencil className="w-3.5 h-3.5" />
+                                  <Check className="w-3.5 h-3.5" />
                                 </button>
                                 <button
-                                  onClick={() => handleDeleteTodo(node.id, todo.id)}
-                                  className="text-rose-400/80 hover:text-rose-300 p-0.5 hover:bg-rose-950/60 rounded transition"
-                                  title="حذف کار (Delete)"
+                                  onClick={handleCancelEditTodo}
+                                  className="p-1 rounded bg-rose-600/80 hover:bg-rose-500 text-white font-bold transition shrink-0"
+                                  title="انصراف"
                                 >
                                   <X className="w-3.5 h-3.5" />
                                 </button>
                               </div>
-                            </>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
+                            ) : (
+                              /* Normal View Mode */
+                              <>
+                                <div className="flex items-center gap-1.5 flex-1 min-w-0" dir="rtl">
+                                  <button
+                                    onClick={() => handleToggleTodo(node.id, todo.id)}
+                                    className={`w-4 h-4 rounded flex items-center justify-center shrink-0 transition ${
+                                      todo.completed
+                                        ? 'bg-emerald-500 text-black font-bold'
+                                        : 'border border-fuchsia-600 hover:border-cyan-400'
+                                    }`}
+                                  >
+                                    {todo.completed && <Check className="w-3 h-3 stroke-[3]" />}
+                                  </button>
+                                  <span
+                                    dir="rtl"
+                                    style={{ fontSize: `${bodyFontPx}px` }}
+                                    className={`leading-tight text-right break-words flex-1 min-w-0 ${
+                                      node.isBold ? 'font-bold' : 'font-normal'
+                                    } ${node.isItalic ? 'italic' : ''} ${
+                                      todo.completed ? 'line-through text-fuchsia-400/50' : 'text-fuchsia-100'
+                                    }`}
+                                  >
+                                    {todo.text}
+                                  </span>
+                                </div>
 
-                  {/* Add New Todo Form - Hidden when node is locked */}
-                  {!node.isLocked && (
-                    <div className="pt-2 border-t border-fuchsia-900/40 flex items-center gap-1.5" dir="rtl">
-                      <input
-                        type="text"
-                        dir="rtl"
-                        value={newTodoTexts[node.id] || ''}
-                        onChange={(e) =>
-                          setNewTodoTexts((prev) => ({ ...prev, [node.id]: e.target.value }))
-                        }
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleAddTodoToNode(node.id);
-                          }
-                        }}
-                        placeholder="+ افزودن کار جدید..."
-                        className="flex-1 px-2.5 py-1 text-[12px] rounded-lg bg-[#0d0221] border border-fuchsia-800/60 text-fuchsia-100 placeholder-fuchsia-400/40 outline-none focus:border-cyan-400 text-right"
-                      />
-                      <button
-                        onClick={() => handleAddTodoToNode(node.id)}
-                        className="p-1 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold transition"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
+                                <div className="hidden group-hover/item:flex items-center gap-1 shrink-0">
+                                  <button
+                                    onClick={(e) => handleStartEditTodo(node.id, todo.id, todo.text, e)}
+                                    className="text-cyan-400 hover:text-cyan-300 p-0.5 hover:bg-cyan-950/60 rounded transition"
+                                    title="ویرایش کار"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteTodo(node.id, todo.id)}
+                                    className="text-rose-400/80 hover:text-rose-300 p-0.5 hover:bg-rose-950/60 rounded transition"
+                                    title="حذف کار"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
-                  )}
-                </div>
+
+                    {!node.isLocked && (
+                      <div className="pt-2 border-t border-fuchsia-900/40 flex items-center gap-1.5" dir="rtl">
+                        <input
+                          type="text"
+                          dir="rtl"
+                          value={newTodoTexts[node.id] || ''}
+                          onChange={(e) =>
+                            setNewTodoTexts((prev) => ({ ...prev, [node.id]: e.target.value }))
+                          }
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleAddTodoToNode(node.id);
+                            }
+                          }}
+                          placeholder="+ افزودن کار جدید..."
+                          style={{ fontSize: `${bodyFontPx}px` }}
+                          className={`flex-1 px-2.5 py-1 rounded-lg bg-[#0d0221] border border-fuchsia-800/60 text-fuchsia-100 placeholder-fuchsia-400/40 outline-none focus:border-cyan-400 text-right ${
+                            node.isBold ? 'font-bold' : 'font-normal'
+                          } ${node.isItalic ? 'italic' : ''}`}
+                        />
+                        <button
+                          onClick={() => handleAddTodoToNode(node.id)}
+                          className="p-1 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold transition"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}
@@ -1204,6 +1627,42 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             <span>برای اتصال، دکمه زنجیر نود A و B را بزنید</span>
           </div>
         </div>
+
+        {/* Delete Confirmation Modal Overlay */}
+        {nodeToDelete && (
+          <div
+            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 pointer-events-auto"
+            onClick={() => setNodeToDelete(null)}
+          >
+            <div
+              className="bg-[#0c021e] border border-rose-500/80 rounded-2xl p-5 max-w-sm w-full shadow-[0_0_35px_rgba(244,63,94,0.4)] flex flex-col gap-4 text-right"
+              onClick={(e) => e.stopPropagation()}
+              dir="rtl"
+            >
+              <div className="flex items-center gap-2.5 text-rose-400 border-b border-rose-900/40 pb-2.5">
+                <Trash2 className="w-5 h-5 shrink-0" />
+                <h3 className="text-sm font-extrabold text-fuchsia-100">تایید حذف</h3>
+              </div>
+              <p className="text-xs font-semibold text-fuchsia-200/90 leading-relaxed">
+                آیا از حذف این {nodeToDelete.shape === 'label' ? 'لیبل' : nodeToDelete.shape === 'note' ? 'یادداشت' : 'نود'} اطمینان دارید؟
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  onClick={() => setNodeToDelete(null)}
+                  className="px-4 py-2 rounded-xl bg-fuchsia-950 hover:bg-fuchsia-900 text-fuchsia-200 text-xs font-bold border border-fuchsia-800/60 transition"
+                >
+                  انصراف (No)
+                </button>
+                <button
+                  onClick={handleConfirmDeleteNode}
+                  className="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-extrabold shadow-[0_0_12px_rgba(244,63,94,0.5)] transition"
+                >
+                  بله، حذف شود (Yes)
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
