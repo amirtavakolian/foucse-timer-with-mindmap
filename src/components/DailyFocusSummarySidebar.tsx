@@ -94,7 +94,7 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
   return (
     <aside className="w-full h-full flex flex-col gap-6 select-none">
       {/* Main Container */}
-      <div className="p-6 sm:p-7 rounded-3xl bg-[#0d0221]/90 border border-fuchsia-500/40 shadow-[0_0_35px_rgba(217,70,239,0.18)] backdrop-blur-xl flex flex-col h-full flex-1 justify-between">
+      <div className="p-6 sm:p-7 rounded-3xl bg-[#0d0221]/90 border border-fuchsia-500/40 shadow-[0_0_35px_rgba(217,70,239,0.18)] backdrop-blur-xl flex flex-col h-full flex-1 justify-start gap-4">
         {/* Header */}
         <div className="pb-5 border-b border-fuchsia-900/50">
           <div className="flex items-center justify-between">
@@ -138,7 +138,7 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
         </div>
 
         {/* Daily Breakdown List */}
-        <div className="mt-5 space-y-4 max-h-[600px] overflow-y-auto pr-1">
+        <div className="flex-1 min-h-0 space-y-4 overflow-y-auto pr-1">
           <div className="text-xs font-bold text-fuchsia-300 uppercase tracking-wider flex items-center justify-between">
             <span>Daily Summary Breakdown</span>
             <span className="text-[10px] font-normal text-fuchsia-400">
