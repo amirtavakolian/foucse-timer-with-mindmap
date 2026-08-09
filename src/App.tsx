@@ -24,7 +24,9 @@ import {
   SESSIONS_KEY,
   TASKS_KEY,
   SETTINGS_KEY,
-  DEFAULT_SETTINGS
+  INITIAL_START_DATE_KEY,
+  DEFAULT_SETTINGS,
+  getInitialStartDate
 } from './utils/storage';
 import { formatTime, getTodayDateStr } from './utils/time';
 import { Monitor, Maximize2, Minimize2, Sparkles, CheckCircle2 } from 'lucide-react';
@@ -290,6 +292,13 @@ export default function App() {
       if (serverSettings) {
         setSettings({ ...DEFAULT_SETTINGS, ...serverSettings });
         localStorage.setItem(SETTINGS_KEY, JSON.stringify(serverSettings));
+      }
+
+      const serverStartDate = await fetchServerData<string>(INITIAL_START_DATE_KEY);
+      if (serverStartDate) {
+        localStorage.setItem(INITIAL_START_DATE_KEY, serverStartDate);
+      } else {
+        getInitialStartDate();
       }
     }
 

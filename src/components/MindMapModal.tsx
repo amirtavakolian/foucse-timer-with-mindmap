@@ -75,19 +75,6 @@ export interface ResizingState {
   startY: number;
 }
 
-const getNodePath = (width: number, height: number, shape: string) => {
-  if (shape === 'circle') {
-    const rx = width / 2;
-    const ry = height / 2;
-    return `M ${rx} 0 A ${rx} ${ry} 0 1 1 ${rx} ${height} A ${rx} ${ry} 0 1 1 ${rx} 0`;
-  }
-  const r = Math.min(16, width / 2, height / 2);
-  const w = width;
-  const h = height;
-  return `M ${w / 2} 0 L ${w - r} 0 A ${r} ${r} 0 0 1 ${w} ${r} L ${w} ${h - r} A ${r} ${r} 0 0 1 ${w - r} ${h} L ${r} ${h} A ${r} ${r} 0 0 1 0 ${h - r} L 0 ${r} A ${r} ${r} 0 0 1 ${r} 0 Z`;
-};
-
-
 interface MindMapModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -1288,7 +1275,6 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
             const titleFontPx = getNodeTitleFontSize(node);
             const bodyFontPx = getNodeContentFontSize(node);
-            const nodePath = getNodePath(node.width, node.height, node.shape);
 
             return (
               <div
@@ -1307,38 +1293,6 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     : ''
                 } ${isConnecting ? 'ring-2 ring-amber-400 animate-pulse' : ''}`}
               >
-                {/* Thin Moving Border Lights */}
-                <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible z-20">
-                  {/* Clockwise Light (Moves Right from Top) */}
-                  <path
-                    d={nodePath}
-                    fill="none"
-                    stroke={colorStyles.hex}
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                    pathLength="100"
-                    strokeDasharray="14 86"
-                    className="animate-orbit-cw"
-                    style={{
-                      filter: `drop-shadow(0 0 3px ${colorStyles.hex})`,
-                    }}
-                  />
-                  {/* Counter-Clockwise Light (Moves Left from Top) */}
-                  <path
-                    d={nodePath}
-                    fill="none"
-                    stroke={colorStyles.hex}
-                    strokeWidth="1.2"
-                    strokeLinecap="round"
-                    pathLength="100"
-                    strokeDasharray="14 86"
-                    className="animate-orbit-ccw"
-                    style={{
-                      filter: `drop-shadow(0 0 3px ${colorStyles.hex})`,
-                    }}
-                  />
-                </svg>
-
                 {/* 4 Edge Resizing Handles */}
                 <div
                   onMouseDown={(e) => handleResizeMouseDown(node, 'n', e)}

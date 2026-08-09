@@ -1,4 +1,5 @@
 import { AppSettings, FocusSession, TaskItem } from '../types';
+import { getTodayDateStr } from './time';
 
 export const SESSIONS_KEY = 'win_focus_timer_sessions_v1';
 export const SETTINGS_KEY = 'win_focus_timer_settings_v1';
@@ -6,6 +7,21 @@ export const TASKS_KEY = 'win_focus_timer_tasks_v1';
 export const MINDMAP_NODES_KEY = 'focustime_mindmap_nodes_v1';
 export const MINDMAP_CONNS_KEY = 'focustime_mindmap_conns_v1';
 export const ACTIVE_TIMER_KEY = 'focustime_active_timer_v1';
+export const INITIAL_START_DATE_KEY = 'focustime_initial_start_date_v1';
+
+export function getInitialStartDate(): string {
+  try {
+    const stored = localStorage.getItem(INITIAL_START_DATE_KEY);
+    if (stored) return stored;
+    const today = getTodayDateStr();
+    localStorage.setItem(INITIAL_START_DATE_KEY, today);
+    syncApiSave(INITIAL_START_DATE_KEY, today);
+    return today;
+  } catch (e) {
+    console.warn('Failed to load initial start date', e);
+  }
+  return getTodayDateStr();
+}
 
 export const DEFAULT_SETTINGS: AppSettings = {
   theme: 'dark',

@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { AppSettings, FocusSession } from '../types';
-import { generateDayIntervals, formatDurationHuman, formatShamsiDate, getTodayDateStr, toPersianDigits } from '../utils/time';
-import { BarChart3, Calendar, CheckCircle2, Clock, Hourglass, Flame, Sparkles, ChevronRight, ChevronLeft, Trash2 } from 'lucide-react';
+import { generateDayIntervals, formatDurationHuman, formatShamsiDate, getTodayDateStr, getAllTrackedDates } from '../utils/time';
+import { getInitialStartDate } from '../utils/storage';
+import { BarChart3, Calendar, Clock, Hourglass, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface DailyFocusSummarySidebarProps {
   settings: AppSettings;
@@ -20,32 +21,21 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
   onSelectDate,
   onClearDay,
 }) => {
+  const [showAllDays, setShowAllDays] = useState<boolean>(false);
   const todayStr = getTodayDateStr();
+  const initialStartDate = getInitialStartDate();
 
-  // Only include today and dates >= todayStr (starting from today, no past days)
-  const dateList: string[] = [todayStr];
+  // Get all dates from initial start date up to today (inclusive), plus any dates with sessions
+  const dateList = getAllTrackedDates(sessions, initialStartDate);
 
-  sessions.forEach((s) => {
-    if (s.dateStr && s.dateStr >= todayStr && !dateList.includes(s.dateStr)) {
-      dateList.push(s.dateStr);
-    }
-  });
-
-  if (selectedDateStr >= todayStr && !dateList.includes(selectedDateStr)) {
-    dateList.push(selectedDateStr);
-  }
-
-  // Sort dates descending (today first)
-  dateList.sort((a, b) => (a < b ? 1 : -1));
-
-  // Compute daily stats for each date directly from exact time interval report records
+  // Compute daily stats for each date
   const dailyData = dateList.map((dateStr) => {
     const daySessions = sessions.filter((s) => s.dateStr === dateStr);
 
     let totalFocusSec = 0;
     let unusedSec = 0;
 
-    if (daySessions.length > 0 || (dateStr === todayStr && activeSession)) {
+    if (daySessions.length > 0 || (dateStr === todayStr && activeSession) || dateStr <= todayStr) {
       const intervals = generateDayIntervals(dateStr, daySessions, activeSession, false);
 
       totalFocusSec = intervals
@@ -73,9 +63,12 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
     };
   });
 
-  // Overall totals across all days shown
+  // Overall totals accumulated across ALL recorded days
   const grandTotalFocusSec = dailyData.reduce((acc, d) => acc + d.totalFocusSec, 0);
   const grandTotalUnusedSec = dailyData.reduce((acc, d) => acc + d.unusedSec, 0);
+
+  // Filter visible items (at most 3 days by default, or all if expanded)
+  const visibleDailyData = showAllDays ? dailyData : dailyData.slice(0, 3);
 
   // Helper to format date label (Always Solar Hijri / Shamsi date)
   const formatDateLabel = (dateStr: string) => {
@@ -153,7 +146,7 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
             </span>
           </div>
 
-          {dailyData.map((item) => {
+          {visibleDailyData.map((item) => {
             const isSelected = item.dateStr === selectedDateStr;
 
             return (
@@ -252,6 +245,27 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
               </div>
             );
           })}
+
+          {/* Show More / Show Less Toggle Button */}
+          {dailyData.length > 3 && (
+            <button
+              type="button"
+              onClick={() => setShowAllDays(!showAllDays)}
+              className="w-full mt-2 py-2.5 px-4 rounded-xl bg-[#150533] hover:bg-[#1f0947] border border-fuchsia-700/60 text-fuchsia-200 text-xs font-bold transition flex items-center justify-center gap-2 shadow-[0_0_12px_rgba(217,70,239,0.15)] hover:border-fuchsia-500 cursor-pointer"
+            >
+              {showAllDays ? (
+                <>
+                  <span>Show Less</span>
+                  <ChevronUp className="w-4 h-4 text-cyan-300" />
+                </>
+              ) : (
+                <>
+                  <span>Show More ({dailyData.length - 3} older days)</span>
+                  <ChevronDown className="w-4 h-4 text-cyan-300" />
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </aside>

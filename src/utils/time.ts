@@ -259,6 +259,63 @@ export function getTodayDateStr(): string {
 }
 
 /**
+ * Generate all tracked dates from initial start date up to today (inclusive), plus any dates with sessions
+ */
+export function getAllTrackedDates(sessions: FocusSession[], initialStartDate?: string): string[] {
+  const todayStr = getTodayDateStr();
+  const dateSet = new Set<string>();
+
+  dateSet.add(todayStr);
+
+  if (initialStartDate) {
+    dateSet.add(initialStartDate);
+  }
+
+  sessions.forEach((s) => {
+    if (s.dateStr) {
+      dateSet.add(s.dateStr);
+    }
+  });
+
+  let minDateStr = todayStr;
+  dateSet.forEach((d) => {
+    if (d < minDateStr) {
+      minDateStr = d;
+    }
+  });
+
+  const resultDates = new Set<string>();
+
+  try {
+    const partsMin = minDateStr.split('-').map(Number);
+    const partsToday = todayStr.split('-').map(Number);
+
+    if (partsMin.length === 3 && partsToday.length === 3) {
+      const cur = new Date(partsMin[0], partsMin[1] - 1, partsMin[2]);
+      const end = new Date(partsToday[0], partsToday[1] - 1, partsToday[2]);
+
+      if (!isNaN(cur.getTime()) && !isNaN(end.getTime()) && cur <= end) {
+        while (cur <= end) {
+          const y = cur.getFullYear();
+          const m = (cur.getMonth() + 1).toString().padStart(2, '0');
+          const d = cur.getDate().toString().padStart(2, '0');
+          resultDates.add(`${y}-${m}-${d}`);
+          cur.setDate(cur.getDate() + 1);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn('Error expanding tracked date range:', e);
+  }
+
+  dateSet.forEach((d) => resultDates.add(d));
+
+  const sorted = Array.from(resultDates);
+  sorted.sort((a, b) => (a < b ? 1 : -1));
+  return sorted;
+}
+
+/**
  * Calculate 24-hour breakdown (0 to 23) for a given date from recorded sessions + active running session
  */
 export function calculate24HourBreakdown(

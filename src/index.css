@@ -28,30 +28,3 @@
   background: rgba(6, 182, 212, 0.8);
 }
 
-/* Node Border Moving Lights Animations */
-@keyframes orbit-clockwise {
-  0% {
-    stroke-dashoffset: 0;
-  }
-  100% {
-    stroke-dashoffset: -100;
-  }
-}
-
-@keyframes orbit-counter-clockwise {
-  0% {
-    stroke-dashoffset: 0;
-  }
-  100% {
-    stroke-dashoffset: 100;
-  }
-}
-
-.animate-orbit-cw {
-  animation: orbit-clockwise 9s linear infinite;
-}
-
-.animate-orbit-ccw {
-  animation: orbit-counter-clockwise 9s linear infinite;
-}
-
