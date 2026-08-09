@@ -387,56 +387,29 @@ export default function App() {
         </div>
       ) : (
         /* Standard Full Windows Application View */
-        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 overflow-x-hidden">
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 overflow-x-hidden space-y-8">
+          {/* Top Section: Timer Display + Daily Summary Sidebar */}
           <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
-            {/* Primary Focus Controls & 24h Timeline */}
-            <div className="w-full lg:flex-1 space-y-8 order-2 lg:order-1 min-w-0">
-              {/* Main Focus Timer Section */}
-              <section className="w-full">
-                <TimerDisplay
-                  settings={settings}
-                  status={status}
-                  targetSeconds={targetSeconds}
-                  remainingSeconds={remainingSeconds}
-                  activeTaskName={activeTaskName}
-                  onChangeTaskName={setActiveTaskName}
-                  onSetTargetTime={handleSetTargetTime}
-                  onStartTimer={handleStartTimer}
-                  onPauseTimer={handlePauseTimer}
-                  onResumeTimer={handleResumeTimer}
-                  onStopAndSaveTimer={handleStopAndSaveTimer}
-                  onResetTimer={handleResetTimer}
-                />
-              </section>
-
-              {/* 24-Hour Daily Focus Activity Timeline Section */}
-              <section className="w-full">
-                <Timeline24h
-                  settings={settings}
-                  selectedDateStr={selectedDateStr}
-                  onChangeDateStr={setSelectedDateStr}
-                  sessions={sessions}
-                  activeSession={activeSession}
-                  onClearDay={handleClearDaySessions}
-                  onAddSession={handleAddSession}
-                  onDeleteSession={handleDeleteSession}
-                />
-              </section>
-
-              {/* Focus Task Checklist */}
-              <section className="w-full">
-                <TaskList
-                  tasks={tasks}
-                  onUpdateTasks={handleUpdateTasks}
-                  activeTaskName={activeTaskName}
-                  onSelectTaskForTimer={(taskTitle) => setActiveTaskName(taskTitle)}
-                  isFa={false}
-                />
-              </section>
+            {/* Main Focus Timer Section */}
+            <div className="w-full lg:flex-1 min-w-0">
+              <TimerDisplay
+                settings={settings}
+                status={status}
+                targetSeconds={targetSeconds}
+                remainingSeconds={remainingSeconds}
+                activeTaskName={activeTaskName}
+                onChangeTaskName={setActiveTaskName}
+                onSetTargetTime={handleSetTargetTime}
+                onStartTimer={handleStartTimer}
+                onPauseTimer={handlePauseTimer}
+                onResumeTimer={handleResumeTimer}
+                onStopAndSaveTimer={handleStopAndSaveTimer}
+                onResetTimer={handleResetTimer}
+              />
             </div>
 
             {/* Right Side Panel: Daily Focus & Unused Time Summary */}
-            <div className="w-full lg:w-[380px] xl:w-[420px] shrink-0 order-1 lg:order-2">
+            <div className="w-full lg:w-[380px] xl:w-[420px] shrink-0">
               <DailyFocusSummarySidebar
                 settings={settings}
                 sessions={sessions}
@@ -447,6 +420,31 @@ export default function App() {
               />
             </div>
           </div>
+
+          {/* 24-Hour Daily Focus Activity Timeline Section (Full 12-Column Width) */}
+          <section className="w-full">
+            <Timeline24h
+              settings={settings}
+              selectedDateStr={selectedDateStr}
+              onChangeDateStr={setSelectedDateStr}
+              sessions={sessions}
+              activeSession={activeSession}
+              onClearDay={handleClearDaySessions}
+              onAddSession={handleAddSession}
+              onDeleteSession={handleDeleteSession}
+            />
+          </section>
+
+          {/* Focus Task Checklist & MindMap Canvas (Full 12-Column Width) */}
+          <section className="w-full">
+            <TaskList
+              tasks={tasks}
+              onUpdateTasks={handleUpdateTasks}
+              activeTaskName={activeTaskName}
+              onSelectTaskForTimer={(taskTitle) => setActiveTaskName(taskTitle)}
+              isFa={false}
+            />
+          </section>
         </main>
       )}
 

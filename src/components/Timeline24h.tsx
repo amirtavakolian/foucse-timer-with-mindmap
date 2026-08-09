@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Clock, Calendar, Zap, Info, ChevronRight, ChevronLeft, Trash2, CheckCircle2, Coffee, Filter, Hourglass, Plus, X, Check } from 'lucide-react';
+import { Clock, Calendar, Zap, Info, ChevronRight, ChevronLeft, Trash2, CheckCircle2, Coffee, Filter, Hourglass, Plus, X, Check, BarChart2 } from 'lucide-react';
 import { AppSettings, FocusSession, HourFocusData } from '../types';
 import { calculate24HourBreakdown, formatDurationHuman, formatHourLabel, formatShamsiDate, generateDayIntervals, getTodayDateStr, toPersianDigits, TimeIntervalRecord } from '../utils/time';
+import { IntervalChartModal } from './IntervalChartModal';
 
 interface Timeline24hProps {
   settings: AppSettings;
@@ -28,6 +29,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
   const isToday = selectedDateStr === todayStr;
 
   const [intervalFilter, setIntervalFilter] = useState<'all' | 'focus' | 'idle'>('all');
+  const [showChartModal, setShowChartModal] = useState(false);
 
   // Manual interval form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -136,17 +138,14 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
   };
 
   return (
-    <div className="w-full max-w-5xl mx-auto mt-8 p-6 sm:p-8 rounded-3xl bg-[#0d0221]/90 border border-fuchsia-500/40 shadow-[0_0_35px_rgba(217,70,239,0.18)] backdrop-blur-xl">
+    <div className="w-full p-6 sm:p-8 rounded-3xl bg-[#0d0221]/90 border border-fuchsia-500/40 shadow-[0_0_35px_rgba(217,70,239,0.18)] backdrop-blur-xl">
       {/* Header & Date Navigation */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-fuchsia-900/50">
         <div>
           <h2 className="text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-fuchsia-200 to-pink-300 flex items-center gap-2">
             <Clock className="w-5 h-5 text-fuchsia-400" />
-            <span>Exact Minute-by-Minute Focus & Idle Timeline</span>
+            <span>Focus & Idle Timeline</span>
           </h2>
-          <p className="text-xs text-fuchsia-300/80 mt-1">
-            Detailed breakdown showing exact start and end times for focused vs non-focused gaps.
-          </p>
         </div>
 
         {/* Date Selector */}
@@ -244,7 +243,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
             </p>
           </div>
 
-          <div className="flex flex-col items-start sm:items-end gap-2">
+          <div className="flex flex-wrap items-center gap-2.5">
             {/* Filter Tabs */}
             <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#0d0221] border border-fuchsia-800/60 text-xs font-bold">
               <button
@@ -281,14 +280,24 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
               </button>
             </div>
 
-            {/* Add Manual Interval Button - Placed directly below Filter Tabs */}
-            <button
-              onClick={() => setShowAddForm(!showAddForm)}
-              className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-fuchsia-600 hover:from-cyan-500 hover:to-fuchsia-500 text-white text-xs font-bold transition shadow-[0_0_12px_rgba(34,211,238,0.3)] shrink-0"
-            >
-              <Plus className="w-4 h-4" />
-              <span>افزودن بازه زمانی</span>
-            </button>
+            {/* Action Buttons: View Chart & Add Manual Interval (Strictly 1 Row) */}
+            <div className="flex items-center gap-2 flex-nowrap">
+              <button
+                onClick={() => setShowChartModal(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white text-xs font-bold transition shadow-[0_0_12px_rgba(217,70,239,0.3)] shrink-0 cursor-pointer"
+              >
+                <BarChart2 className="w-4 h-4" />
+                <span>نمودار بازه‌ها</span>
+              </button>
+
+              <button
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-fuchsia-600 hover:from-cyan-500 hover:to-fuchsia-500 text-white text-xs font-bold transition shadow-[0_0_12px_rgba(34,211,238,0.3)] shrink-0 cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+                <span>افزودن بازه زمانی</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -504,6 +513,14 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
           )}
         </div>
       </div>
+
+      {/* Interval Chart Modal */}
+      <IntervalChartModal
+        isOpen={showChartModal}
+        onClose={() => setShowChartModal(false)}
+        selectedDateStr={selectedDateStr}
+        intervals={intervals}
+      />
     </div>
   );
 };
