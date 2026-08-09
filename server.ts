@@ -23,10 +23,11 @@ function getFilePathForKey(key: string): string {
 
   let filename = `${cleanKey}.json`;
   if (cleanKey === 'conns') filename = 'mindmap_connections.json';
-  if (cleanKey === 'nodes') filename = 'mindmap_connections.json'; // fix below if needed
+  if (cleanKey === 'nodes') filename = 'mindmap_nodes.json';
 
   if (cleanKey === 'mindmap_nodes' || cleanKey === 'nodes') filename = 'mindmap_nodes.json';
   if (cleanKey === 'mindmap_connections' || cleanKey === 'conns' || cleanKey === 'mindmap_conns') filename = 'mindmap_connections.json';
+  if (cleanKey === 'interval_reports' || cleanKey === 'intervals') filename = 'interval_reports.json';
 
   return path.join(DATA_DIR, filename);
 }

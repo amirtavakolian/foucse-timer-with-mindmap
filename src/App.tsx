@@ -21,14 +21,19 @@ import {
   loadActiveTimerState,
   saveActiveTimerState,
   clearActiveTimerState,
+  saveIntervalReports,
+  saveIntervalReportForDate,
+  clearIntervalReportForDate,
+  IntervalReportsMap,
   SESSIONS_KEY,
   TASKS_KEY,
   SETTINGS_KEY,
   INITIAL_START_DATE_KEY,
+  INTERVAL_REPORTS_KEY,
   DEFAULT_SETTINGS,
   getInitialStartDate
 } from './utils/storage';
-import { formatTime, getTodayDateStr } from './utils/time';
+import { formatTime, getTodayDateStr, generateDayIntervals } from './utils/time';
 import { Monitor, Maximize2, Minimize2, Sparkles, CheckCircle2 } from 'lucide-react';
 
 export default function App() {
@@ -157,7 +162,11 @@ export default function App() {
         };
 
         saveSession(newSession);
-        setSessions(loadSessions());
+        const allSessions = loadSessions();
+        setSessions(allSessions);
+        const todayStr = getTodayDateStr();
+        const todaySessions = allSessions.filter((s) => s.dateStr === todayStr);
+        saveIntervalReportForDate(todayStr, generateDayIntervals(todayStr, todaySessions, null, false));
       }
     }
 
@@ -204,7 +213,11 @@ export default function App() {
             };
 
             saveSession(completedSession);
-            setSessions(loadSessions());
+            const allSessions = loadSessions();
+            setSessions(allSessions);
+            const todayStr = getTodayDateStr();
+            const todaySessions = allSessions.filter((s) => s.dateStr === todayStr);
+            saveIntervalReportForDate(todayStr, generateDayIntervals(todayStr, todaySessions, null, false));
           }
 
           endTimeRef.current = null;
@@ -300,6 +313,11 @@ export default function App() {
       } else {
         getInitialStartDate();
       }
+
+      const serverIntervalReports = await fetchServerData<IntervalReportsMap>(INTERVAL_REPORTS_KEY);
+      if (serverIntervalReports && typeof serverIntervalReports === 'object') {
+        localStorage.setItem(INTERVAL_REPORTS_KEY, JSON.stringify(serverIntervalReports));
+      }
     }
 
     initStorageSync();
@@ -310,6 +328,7 @@ export default function App() {
     const updated = sessions.filter((s) => s.dateStr !== dateStr);
     saveAllSessions(updated);
     setSessions(updated);
+    clearIntervalReportForDate(dateStr);
   };
 
   // Handle Add Manual Session
@@ -317,13 +336,22 @@ export default function App() {
     const updated = [...sessions, newSession];
     saveAllSessions(updated);
     setSessions(updated);
+    const daySessions = updated.filter((s) => s.dateStr === newSession.dateStr);
+    const newIntervals = generateDayIntervals(newSession.dateStr, daySessions, activeSession, false);
+    saveIntervalReportForDate(newSession.dateStr, newIntervals);
   };
 
   // Handle Delete Single Session
   const handleDeleteSession = (sessionId: string) => {
+    const deletedSession = sessions.find((s) => s.id === sessionId);
     const updated = sessions.filter((s) => s.id !== sessionId);
     saveAllSessions(updated);
     setSessions(updated);
+    if (deletedSession) {
+      const daySessions = updated.filter((s) => s.dateStr === deletedSession.dateStr);
+      const newIntervals = generateDayIntervals(deletedSession.dateStr, daySessions, activeSession, false);
+      saveIntervalReportForDate(deletedSession.dateStr, newIntervals);
+    }
   };
 
   return (

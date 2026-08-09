@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { AppSettings, FocusSession } from '../types';
-import { generateDayIntervals, formatDurationHuman, formatShamsiDate, getTodayDateStr, getAllTrackedDates } from '../utils/time';
-import { getInitialStartDate } from '../utils/storage';
+import { formatDurationHuman, formatShamsiDate, getTodayDateStr, getAllTrackedDates } from '../utils/time';
+import { getInitialStartDate, getExactIntervalReportForDate } from '../utils/storage';
 import { BarChart3, Calendar, Clock, Hourglass, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 
 interface DailyFocusSummarySidebarProps {
@@ -36,7 +36,7 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
     let unusedSec = 0;
 
     if (daySessions.length > 0 || (dateStr === todayStr && activeSession) || dateStr <= todayStr) {
-      const intervals = generateDayIntervals(dateStr, daySessions, activeSession, false);
+      const intervals = getExactIntervalReportForDate(dateStr, daySessions, activeSession, false);
 
       totalFocusSec = intervals
         .filter((i) => i.type === 'focus')

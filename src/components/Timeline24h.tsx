@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Clock, Calendar, Zap, Info, ChevronRight, ChevronLeft, Trash2, CheckCircle2, Coffee, Filter, Hourglass, Plus, X, Check, BarChart2 } from 'lucide-react';
 import { AppSettings, FocusSession, HourFocusData } from '../types';
 import { calculate24HourBreakdown, formatDurationHuman, formatHourLabel, formatShamsiDate, generateDayIntervals, getTodayDateStr, toPersianDigits, TimeIntervalRecord } from '../utils/time';
+import { getExactIntervalReportForDate, saveIntervalReportForDate, clearIntervalReportForDate } from '../utils/storage';
 import { IntervalChartModal } from './IntervalChartModal';
 
 interface Timeline24hProps {
@@ -45,8 +46,8 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
   // Calculate 24-hour hour blocks data
   const hoursData = calculate24HourBreakdown(selectedDateStr, daySessions, activeSession);
 
-  // Generate exact minute-by-minute continuous interval log (Focus & Idle)
-  const intervals = generateDayIntervals(selectedDateStr, daySessions, activeSession, false);
+  // Generate exact minute-by-minute continuous interval log (Focus & Idle) reading from JSON storage
+  const intervals = getExactIntervalReportForDate(selectedDateStr, daySessions, activeSession, false);
 
   // Filter intervals based on selected tab
   const filteredIntervals = intervals.filter((item) => {
@@ -99,6 +100,10 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
     if (onAddSession) {
       onAddSession(newSession);
     }
+
+    const updatedSessions = [...daySessions, newSession];
+    const newIntervals = generateDayIntervals(selectedDateStr, updatedSessions, activeSession, false);
+    saveIntervalReportForDate(selectedDateStr, newIntervals);
 
     setShowAddForm(false);
     setTaskNameInput('');
@@ -176,6 +181,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
             <button
               onClick={() => {
                 if (window.confirm('Clear logs for this day?')) {
+                  clearIntervalReportForDate(selectedDateStr);
                   onClearDay(selectedDateStr);
                 }
               }}

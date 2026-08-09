@@ -1,5 +1,5 @@
 import { AppSettings, FocusSession, TaskItem } from '../types';
-import { getTodayDateStr } from './time';
+import { getTodayDateStr, TimeIntervalRecord, generateDayIntervals } from './time';
 
 export const SESSIONS_KEY = 'win_focus_timer_sessions_v1';
 export const SETTINGS_KEY = 'win_focus_timer_settings_v1';
@@ -8,6 +8,7 @@ export const MINDMAP_NODES_KEY = 'focustime_mindmap_nodes_v1';
 export const MINDMAP_CONNS_KEY = 'focustime_mindmap_conns_v1';
 export const ACTIVE_TIMER_KEY = 'focustime_active_timer_v1';
 export const INITIAL_START_DATE_KEY = 'focustime_initial_start_date_v1';
+export const INTERVAL_REPORTS_KEY = 'focustime_interval_reports_v1';
 
 export function getInitialStartDate(): string {
   try {
@@ -185,6 +186,71 @@ export function saveMindMapConnections(conns: any[]): void {
   }
 }
 
+export type IntervalReportsMap = Record<string, TimeIntervalRecord[]>;
+
+export function loadIntervalReports(): IntervalReportsMap {
+  try {
+    const raw = localStorage.getItem(INTERVAL_REPORTS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Failed to load interval reports from storage', e);
+  }
+  return {};
+}
+
+export function saveIntervalReports(reports: IntervalReportsMap): void {
+  try {
+    localStorage.setItem(INTERVAL_REPORTS_KEY, JSON.stringify(reports));
+    syncApiSave(INTERVAL_REPORTS_KEY, reports);
+  } catch (e) {
+    console.warn('Failed to save interval reports', e);
+  }
+}
+
+export function saveIntervalReportForDate(dateStr: string, intervals: TimeIntervalRecord[]): void {
+  try {
+    const reports = loadIntervalReports();
+    reports[dateStr] = intervals;
+    saveIntervalReports(reports);
+  } catch (e) {
+    console.warn('Failed to save interval report for date', e);
+  }
+}
+
+export function clearIntervalReportForDate(dateStr: string): void {
+  try {
+    const reports = loadIntervalReports();
+    delete reports[dateStr];
+    saveIntervalReports(reports);
+  } catch (e) {
+    console.warn('Failed to clear interval report for date', e);
+  }
+}
+
+/**
+ * Gets exact time interval report (HH:MM) for a date directly from JSON storage.
+ * If JSON storage does not have data for this date yet, generates it and persists to JSON storage.
+ */
+export function getExactIntervalReportForDate(
+  dateStr: string,
+  sessions: FocusSession[],
+  activeSession: { startTime: number; elapsedSeconds: number } | null,
+  usePersian = false
+): TimeIntervalRecord[] {
+  const reportsMap = loadIntervalReports();
+  const storedForDate = reportsMap[dateStr];
+
+  // If stored in JSON and date is not today, return directly from JSON
+  if (storedForDate && storedForDate.length > 0 && dateStr !== getTodayDateStr()) {
+    return storedForDate;
+  }
+
+  // Generate / update intervals and persist to JSON storage
+  const generated = generateDayIntervals(dateStr, sessions, activeSession, usePersian);
+  saveIntervalReportForDate(dateStr, generated);
+  return generated;
+}
+
 export function exportBackupData(): string {
   const data = {
     settings: loadSettings(),
@@ -192,6 +258,7 @@ export function exportBackupData(): string {
     tasks: loadTasks(),
     mindmapNodes: loadMindMapNodes(),
     mindmapConnections: loadMindMapConnections(),
+    intervalReports: loadIntervalReports(),
     exportDate: new Date().toISOString(),
   };
   return JSON.stringify(data, null, 2);
@@ -205,6 +272,9 @@ export function importBackupData(jsonStr: string): boolean {
     if (Array.isArray(parsed.tasks)) saveTasks(parsed.tasks);
     if (Array.isArray(parsed.mindmapNodes)) saveMindMapNodes(parsed.mindmapNodes);
     if (Array.isArray(parsed.mindmapConnections)) saveMindMapConnections(parsed.mindmapConnections);
+    if (parsed.intervalReports && typeof parsed.intervalReports === 'object') {
+      saveIntervalReports(parsed.intervalReports);
+    }
     return true;
   } catch {
     return false;
