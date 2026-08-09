@@ -417,9 +417,9 @@ export default function App() {
         /* Standard Full Windows Application View */
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 overflow-x-hidden space-y-8">
           {/* Top Section: Timer Display + Daily Summary Sidebar */}
-          <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-start">
+          <div className="flex flex-col lg:flex-row gap-6 lg:gap-8 items-stretch">
             {/* Main Focus Timer Section */}
-            <div className="w-full lg:flex-1 min-w-0">
+            <div className="w-full lg:flex-1 min-w-0 flex flex-col">
               <TimerDisplay
                 settings={settings}
                 status={status}
@@ -437,7 +437,7 @@ export default function App() {
             </div>
 
             {/* Right Side Panel: Daily Focus & Unused Time Summary */}
-            <div className="w-full lg:w-[380px] xl:w-[420px] shrink-0">
+            <div className="w-full lg:w-[380px] xl:w-[420px] shrink-0 flex flex-col">
               <DailyFocusSummarySidebar
                 settings={settings}
                 sessions={sessions}

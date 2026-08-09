@@ -72,7 +72,7 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
   const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
 
   return (
-    <div className="flex flex-col items-center justify-center w-full max-w-2xl mx-auto p-6 sm:p-8 rounded-3xl bg-[#0d0221]/90 border border-fuchsia-500/40 shadow-[0_0_35px_rgba(217,70,239,0.18)] backdrop-blur-xl transition-all">
+    <div className="flex flex-col items-center justify-between w-full h-full p-6 sm:p-8 rounded-3xl bg-[#0d0221]/90 border border-fuchsia-500/40 shadow-[0_0_35px_rgba(217,70,239,0.18)] backdrop-blur-xl transition-all">
       {/* Header Task Input */}
       <div className="w-full mb-6">
         <label className="block text-xs font-bold tracking-wider text-fuchsia-300 uppercase mb-1.5 text-left">
