@@ -176,14 +176,14 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-black/80 backdrop-blur-md animate-fade-in">
-      <div className="relative w-full max-w-4xl max-h-[92vh] flex flex-col bg-[#0d0221] border border-fuchsia-500/60 rounded-3xl shadow-[0_0_50px_rgba(217,70,239,0.25)] text-fuchsia-100 overflow-hidden">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-3 bg-black/80 backdrop-blur-md animate-fade-in">
+      <div className="relative w-full max-w-[98vw] h-[95vh] sm:h-[96vh] flex flex-col bg-[#0d0221] border border-fuchsia-500/60 rounded-3xl shadow-[0_0_50px_rgba(217,70,239,0.25)] text-fuchsia-100 overflow-hidden">
         
         {/* Modal Header */}
-        <div className="p-5 sm:p-6 border-b border-fuchsia-900/60 flex items-center justify-between gap-4 bg-gradient-to-r from-[#150533] via-[#0d0221] to-[#1a053f]">
+        <div className="px-3.5 py-3 sm:px-5 sm:py-4 border-b border-fuchsia-900/60 flex items-center justify-between gap-4 bg-gradient-to-r from-[#150533] via-[#0d0221] to-[#1a053f] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl bg-fuchsia-950/90 border border-fuchsia-600/70 flex items-center justify-center text-cyan-300 shadow-[0_0_15px_rgba(217,70,239,0.3)] shrink-0">
-              <BarChart2 className="w-6 h-6" />
+            <div className="w-10 h-10 sm:w-11 sm:h-11 rounded-2xl bg-fuchsia-950/90 border border-fuchsia-600/70 flex items-center justify-center text-cyan-300 shadow-[0_0_15px_rgba(217,70,239,0.3)] shrink-0">
+              <BarChart2 className="w-5 h-5 sm:w-6 sm:h-6" />
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-fuchsia-200 to-pink-300 flex items-center gap-2">
@@ -198,15 +198,15 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
 
           <button
             onClick={onClose}
-            className="p-2.5 rounded-2xl bg-[#150533] hover:bg-rose-950/80 text-fuchsia-300 hover:text-rose-200 border border-fuchsia-800/60 hover:border-rose-600/60 transition shadow-md cursor-pointer"
+            className="p-2 sm:p-2.5 rounded-2xl bg-[#150533] hover:bg-rose-950/80 text-fuchsia-300 hover:text-rose-200 border border-fuchsia-800/60 hover:border-rose-600/60 transition shadow-md cursor-pointer"
             title="بستن"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Modal Content Body - Scrollable */}
-        <div className="p-5 sm:p-6 overflow-y-auto space-y-6 dir-rtl">
+        {/* Modal Content Body - Scrollable & Flex fill */}
+        <div className="px-2 sm:px-4 py-3 sm:py-4 overflow-y-auto flex-1 space-y-5 dir-rtl flex flex-col">
           
           {/* Top Metric Cards */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
@@ -312,8 +312,8 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
 
           {/* TAB 1: Hourly Bar Chart (00:00 - 24:00) */}
           {activeTab === 'hourly' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="flex-1 flex flex-col space-y-4 min-h-[380px]">
+              <div className="flex items-center justify-between shrink-0">
                 <h4 className="text-sm font-extrabold text-cyan-300 flex items-center gap-2">
                   <BarChart2 className="w-4 h-4 text-cyan-400" />
                   <span>میزان تمرکز و استراحت در هر ساعت (دقیقه در هر ساعت)</span>
@@ -321,19 +321,19 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
                 <span className="text-xs text-fuchsia-400/80">محور افقی: ساعت (00:00 - 23:00) | محور عمودی: دقیقه</span>
               </div>
 
-              <div className="w-full h-72 p-3 rounded-2xl bg-[#150533]/80 border border-fuchsia-800/60 shadow-inner dir-ltr">
+              <div className="w-full flex-1 min-h-[350px] sm:min-h-[420px] p-2 sm:p-3 rounded-2xl bg-[#150533]/80 border border-fuchsia-800/60 shadow-inner dir-ltr">
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={hourlyChartData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                  <BarChart data={hourlyChartData} margin={{ top: 15, right: 5, left: -25, bottom: 5 }}>
                     <XAxis
                       dataKey="hourLabel"
                       stroke="#c084fc"
-                      fontSize={10}
+                      fontSize={11}
                       tickLine={false}
-                      interval={2}
+                      interval={1}
                     />
                     <YAxis
                       stroke="#c084fc"
-                      fontSize={10}
+                      fontSize={11}
                       tickLine={false}
                       domain={[0, 60]}
                       ticks={[0, 15, 30, 45, 60]}
@@ -349,8 +349,8 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
 
           {/* TAB 2: Visual Interval Gantt / Timeline Ribbon */}
           {activeTab === 'timeline' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="flex-1 flex flex-col space-y-4">
+              <div className="flex items-center justify-between shrink-0">
                 <h4 className="text-sm font-extrabold text-cyan-300 flex items-center gap-2">
                   <Clock className="w-4 h-4 text-cyan-400" />
                   <span>خط زمانی پیوسته ۲۴ ساعته (Continuous 24-Hour Timeline Bar)</span>
@@ -359,8 +359,8 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
               </div>
 
               {/* 24h Ribbon Representation */}
-              <div className="p-4 rounded-2xl bg-[#150533]/90 border border-fuchsia-800/70 space-y-3">
-                <div className="relative w-full h-12 bg-[#0d0221] rounded-xl border border-fuchsia-900/80 overflow-hidden flex items-center shadow-inner">
+              <div className="p-4 sm:p-5 rounded-2xl bg-[#150533]/90 border border-fuchsia-800/70 space-y-3 shrink-0">
+                <div className="relative w-full h-16 sm:h-20 bg-[#0d0221] rounded-xl border border-fuchsia-900/80 overflow-hidden flex items-center shadow-inner">
                   {intervals.map((item, idx) => {
                     const [sH, sM] = item.startTimeStr.split(':').map(Number);
                     const [eH, eM] = item.endTimeStr.split(':').map(Number);
@@ -398,7 +398,7 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
                 </div>
 
                 {/* Hour Scale Markers (00:00, 04:00, 08:00, 12:00, 16:00, 20:00, 24:00) */}
-                <div className="flex justify-between text-[10px] font-mono font-bold text-fuchsia-300/80 px-1 dir-ltr">
+                <div className="flex justify-between text-[11px] font-mono font-bold text-fuchsia-300/80 px-1 dir-ltr">
                   <span>00:00</span>
                   <span>04:00</span>
                   <span>08:00</span>
@@ -410,11 +410,11 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
               </div>
 
               {/* Detail Cards List */}
-              <div className="mt-4 space-y-2 max-h-60 overflow-y-auto pr-1">
+              <div className="mt-2 space-y-2 flex-1 min-h-[220px] max-h-[420px] overflow-y-auto pr-1">
                 {intervals.map((item, idx) => (
                   <div
                     key={item.id || idx}
-                    className={`p-3 rounded-xl border flex items-center justify-between text-xs font-bold ${
+                    className={`p-3.5 rounded-xl border flex items-center justify-between text-xs font-bold ${
                       item.type === 'focus'
                         ? 'bg-[#1a073d]/80 border-fuchsia-700/60 text-cyan-200'
                         : 'bg-[#12042b]/60 border-amber-800/40 text-amber-200'
@@ -443,8 +443,8 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
 
           {/* TAB 3: Individual Interval Duration Bar Chart */}
           {activeTab === 'intervals' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="flex-1 flex flex-col space-y-4 min-h-[380px]">
+              <div className="flex items-center justify-between shrink-0">
                 <h4 className="text-sm font-extrabold text-cyan-300 flex items-center gap-2">
                   <PieChart className="w-4 h-4 text-cyan-400" />
                   <span>مقایسه طول هر بازه (مدت زمان بر حسب دقیقه)</span>
@@ -452,17 +452,17 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
                 <span className="text-xs text-fuchsia-400/80">نمودار ستونی بازه‌های زمانی به ترتیب وقوع</span>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="md:col-span-2 h-72 p-3 rounded-2xl bg-[#150533]/80 border border-fuchsia-800/60 shadow-inner dir-ltr">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 flex-1 min-h-[350px]">
+                <div className="md:col-span-2 min-h-[320px] sm:min-h-[400px] h-full p-2 sm:p-3 rounded-2xl bg-[#150533]/80 border border-fuchsia-800/60 shadow-inner dir-ltr flex flex-col">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={sequentialChartData} margin={{ top: 10, right: 10, left: -20, bottom: 20 }}>
+                    <BarChart data={sequentialChartData} margin={{ top: 15, right: 5, left: -25, bottom: 20 }}>
                       <XAxis
                         dataKey="startTime"
                         stroke="#c084fc"
-                        fontSize={10}
+                        fontSize={11}
                         tickLine={false}
                       />
-                      <YAxis stroke="#c084fc" fontSize={10} tickLine={false} />
+                      <YAxis stroke="#c084fc" fontSize={11} tickLine={false} />
                       <Tooltip content={<CustomIntervalTooltip />} />
                       <Bar dataKey="durationMins" name="مدت زمان (دقیقه)">
                         {sequentialChartData.map((entry, index) => (
@@ -474,17 +474,17 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
                 </div>
 
                 {/* Pie Ratio Breakdown */}
-                <div className="p-4 rounded-2xl bg-[#150533]/80 border border-fuchsia-800/60 flex flex-col items-center justify-center">
+                <div className="p-4 sm:p-5 rounded-2xl bg-[#150533]/80 border border-fuchsia-800/60 flex flex-col items-center justify-center min-h-[320px] sm:min-h-[400px] h-full">
                   <h5 className="text-xs font-extrabold text-fuchsia-200 mb-2">سهم تمرکز vs استراحت</h5>
-                  <div className="w-full h-48 dir-ltr">
+                  <div className="w-full flex-1 min-h-[240px] dir-ltr">
                     <ResponsiveContainer width="100%" height="100%">
                       <RechartsPieChart>
                         <Pie
                           data={pieData}
                           cx="50%"
                           cy="50%"
-                          innerRadius={35}
-                          outerRadius={65}
+                          innerRadius={45}
+                          outerRadius={80}
                           paddingAngle={4}
                           dataKey="value"
                         >
@@ -496,7 +496,7 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
                       </RechartsPieChart>
                     </ResponsiveContainer>
                   </div>
-                  <div className="text-center text-xs font-extrabold text-cyan-300 font-mono">
+                  <div className="text-center text-xs font-extrabold text-cyan-300 font-mono mt-2">
                     تمرکز: {focusPercentage}% | استراحت: {100 - focusPercentage}%
                   </div>
                 </div>

@@ -9,6 +9,42 @@ export const MINDMAP_CONNS_KEY = 'focustime_mindmap_conns_v1';
 export const ACTIVE_TIMER_KEY = 'focustime_active_timer_v1';
 export const INITIAL_START_DATE_KEY = 'focustime_initial_start_date_v1';
 export const INTERVAL_REPORTS_KEY = 'focustime_interval_reports_v1';
+export const CLEARED_DATES_KEY = 'focustime_cleared_dates_v1';
+
+export function loadClearedDates(): string[] {
+  try {
+    const raw = localStorage.getItem(CLEARED_DATES_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Failed to load cleared dates', e);
+  }
+  return [];
+}
+
+export function saveClearedDates(cleared: string[]): void {
+  try {
+    localStorage.setItem(CLEARED_DATES_KEY, JSON.stringify(cleared));
+    syncApiSave(CLEARED_DATES_KEY, cleared);
+  } catch (e) {
+    console.warn('Failed to save cleared dates', e);
+  }
+}
+
+export function addClearedDate(dateStr: string): void {
+  const current = loadClearedDates();
+  if (!current.includes(dateStr)) {
+    const updated = [...current, dateStr];
+    saveClearedDates(updated);
+  }
+}
+
+export function removeClearedDate(dateStr: string): void {
+  const current = loadClearedDates();
+  if (current.includes(dateStr)) {
+    const updated = current.filter((d) => d !== dateStr);
+    saveClearedDates(updated);
+  }
+}
 
 export function getInitialStartDate(): string {
   try {
@@ -93,6 +129,9 @@ export function loadSessions(): FocusSession[] {
 
 export function saveSession(session: FocusSession): void {
   try {
+    if (session.dateStr) {
+      removeClearedDate(session.dateStr);
+    }
     const sessions = loadSessions();
     const existingIndex = sessions.findIndex((s) => s.id === session.id);
     if (existingIndex >= 0) {
@@ -235,8 +274,12 @@ export function getExactIntervalReportForDate(
   dateStr: string,
   sessions: FocusSession[],
   activeSession: { startTime: number; elapsedSeconds: number } | null,
-  usePersian = false
+  usePersian = false,
+  clearedDates: string[] = []
 ): TimeIntervalRecord[] {
+  if (clearedDates.includes(dateStr) && !sessions.some((s) => s.dateStr === dateStr)) {
+    return [];
+  }
   const reportsMap = loadIntervalReports();
   const storedForDate = reportsMap[dateStr];
 

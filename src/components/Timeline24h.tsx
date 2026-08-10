@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Clock, Calendar, Zap, Info, ChevronRight, ChevronLeft, Trash2, CheckCircle2, Coffee, Filter, Hourglass, Plus, X, Check, BarChart2 } from 'lucide-react';
+import { Clock, Calendar, Zap, Info, ChevronRight, ChevronLeft, Trash2, CheckCircle2, Coffee, Filter, Hourglass, Plus, X, Check, BarChart2, AlertTriangle } from 'lucide-react';
 import { AppSettings, FocusSession, HourFocusData } from '../types';
 import { calculate24HourBreakdown, formatDurationHuman, formatHourLabel, formatShamsiDate, generateDayIntervals, getTodayDateStr, toPersianDigits, TimeIntervalRecord } from '../utils/time';
 import { getExactIntervalReportForDate, saveIntervalReportForDate, clearIntervalReportForDate } from '../utils/storage';
@@ -31,6 +31,8 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
 
   const [intervalFilter, setIntervalFilter] = useState<'all' | 'focus' | 'idle'>('all');
   const [showChartModal, setShowChartModal] = useState(false);
+  const [confirmClearDay, setConfirmClearDay] = useState(false);
+  const [confirmDeleteSessionId, setConfirmDeleteSessionId] = useState<string | null>(null);
 
   // Manual interval form state
   const [showAddForm, setShowAddForm] = useState(false);
@@ -177,14 +179,9 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
             <ChevronRight className="w-4 h-4" />
           </button>
 
-          {daySessions.length > 0 && (
+          {!isToday && daySessions.length > 0 && (
             <button
-              onClick={() => {
-                if (window.confirm('Clear logs for this day?')) {
-                  clearIntervalReportForDate(selectedDateStr);
-                  onClearDay(selectedDateStr);
-                }
-              }}
+              onClick={() => setConfirmClearDay(true)}
               className="p-2 rounded-xl bg-rose-950/60 hover:bg-rose-900/80 text-rose-300 transition border border-rose-800/60 shadow-[0_0_10px_rgba(225,29,72,0.2)]"
               title="Clear Day"
             >
@@ -501,11 +498,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
 
                     {item.sessionId && onDeleteSession && (
                       <button
-                        onClick={() => {
-                          if (window.confirm('آیا از حذف این بازه زمانی اطمینان دارید؟')) {
-                            onDeleteSession(item.sessionId!);
-                          }
-                        }}
+                        onClick={() => setConfirmDeleteSessionId(item.sessionId!)}
                         className="p-1.5 rounded-xl bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800/60 transition shadow-[0_0_8px_rgba(225,29,72,0.2)] ml-1"
                         title="حذف این بازه زمانی"
                       >
@@ -527,6 +520,103 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
         selectedDateStr={selectedDateStr}
         intervals={intervals}
       />
+
+      {/* Clear Day Confirmation Modal */}
+      {confirmClearDay && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#120326] border border-rose-600/50 text-fuchsia-100 rounded-2xl p-6 max-w-md w-full shadow-[0_0_30px_rgba(225,29,72,0.3)] animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-fuchsia-900/60">
+              <div className="flex items-center gap-3 text-rose-400">
+                <AlertTriangle className="w-6 h-6 shrink-0" />
+                <h3 className="text-base font-bold text-fuchsia-100">تایید حذف داده‌های این روز</h3>
+              </div>
+              <button
+                onClick={() => setConfirmClearDay(false)}
+                className="text-fuchsia-400 hover:text-white p-1 rounded-lg hover:bg-fuchsia-900/50 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-fuchsia-200 mb-6 leading-relaxed">
+              آیا از حذف تمام داده‌ها و جلسات ثبت‌شده برای روز{' '}
+              <span className="font-extrabold text-cyan-300 dir-ltr inline-block">
+                {formatShamsiDate(selectedDateStr)} ({selectedDateStr})
+              </span>{' '}
+              اطمینان دارید؟
+            </p>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmClearDay(false)}
+                className="px-4 py-2.5 rounded-xl bg-fuchsia-950/80 hover:bg-fuchsia-900 border border-fuchsia-800 text-fuchsia-200 text-sm font-bold transition"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  clearIntervalReportForDate(selectedDateStr);
+                  onClearDay(selectedDateStr);
+                  setConfirmClearDay(false);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition shadow-[0_0_15px_rgba(225,29,72,0.4)] flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>حذف شود</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Session Confirmation Modal */}
+      {confirmDeleteSessionId && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#120326] border border-rose-600/50 text-fuchsia-100 rounded-2xl p-6 max-w-md w-full shadow-[0_0_30px_rgba(225,29,72,0.3)] animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-fuchsia-900/60">
+              <div className="flex items-center gap-3 text-rose-400">
+                <AlertTriangle className="w-6 h-6 shrink-0" />
+                <h3 className="text-base font-bold text-fuchsia-100">تایید حذف بازه زمانی</h3>
+              </div>
+              <button
+                onClick={() => setConfirmDeleteSessionId(null)}
+                className="text-fuchsia-400 hover:text-white p-1 rounded-lg hover:bg-fuchsia-900/50 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-fuchsia-200 mb-6 leading-relaxed">
+              آیا از حذف این بازه زمانی مشخص اطمینان دارید؟
+            </p>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteSessionId(null)}
+                className="px-4 py-2.5 rounded-xl bg-fuchsia-950/80 hover:bg-fuchsia-900 border border-fuchsia-800 text-fuchsia-200 text-sm font-bold transition"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onDeleteSession && confirmDeleteSessionId) {
+                    onDeleteSession(confirmDeleteSessionId);
+                  }
+                  setConfirmDeleteSessionId(null);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition shadow-[0_0_15px_rgba(225,29,72,0.4)] flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>حذف شود</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

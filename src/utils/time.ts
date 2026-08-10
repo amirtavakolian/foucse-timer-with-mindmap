@@ -42,12 +42,12 @@ export function formatDurationHuman(seconds: number, lang: 'fa' | 'en' = 'en'): 
     if (h === 0) return `${toPersianDigits(m)} دقیقه`;
     if (m === 0) return `${toPersianDigits(h)} ساعت`;
     return `${toPersianDigits(h)} ساعت و ${toPersianDigits(m)} دقیقه`;
-  } else {
-    if (h === 0 && m === 0) return `${Math.floor(seconds)}s`;
-    if (h === 0) return `${m}m`;
-    if (m === 0) return `${h}h`;
-    return `${h}h ${m}m`;
   }
+
+  if (h === 0 && m === 0) return `${Math.floor(seconds)}s`;
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
 }
 
 /**
@@ -261,7 +261,11 @@ export function getTodayDateStr(): string {
 /**
  * Generate all tracked dates from initial start date up to today (inclusive), plus any dates with sessions
  */
-export function getAllTrackedDates(sessions: FocusSession[], initialStartDate?: string): string[] {
+export function getAllTrackedDates(
+  sessions: FocusSession[],
+  initialStartDate?: string,
+  clearedDates: string[] = []
+): string[] {
   const todayStr = getTodayDateStr();
   const dateSet = new Set<string>();
 
@@ -309,6 +313,15 @@ export function getAllTrackedDates(sessions: FocusSession[], initialStartDate?: 
   }
 
   dateSet.forEach((d) => resultDates.add(d));
+
+  if (clearedDates.length > 0) {
+    clearedDates.forEach((clearedDate) => {
+      const hasSessions = sessions.some((s) => s.dateStr === clearedDate);
+      if (!hasSessions) {
+        resultDates.delete(clearedDate);
+      }
+    });
+  }
 
   const sorted = Array.from(resultDates);
   sorted.sort((a, b) => (a < b ? 1 : -1));

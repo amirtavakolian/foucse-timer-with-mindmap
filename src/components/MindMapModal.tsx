@@ -23,6 +23,9 @@ import {
   Lock,
   Unlock,
   Pencil,
+  ArrowUpDown,
+  ChevronUp,
+  ChevronDown,
   Tag,
   StickyNote,
   Bold,
@@ -201,14 +204,36 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   const [connectingFromId, setConnectingFromId] = useState<string | null>(null);
   const [mouseCanvasPos, setMouseCanvasPos] = useState({ x: 0, y: 0 });
 
-  // Selected Node for editing or quick actions
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  // Selected Nodes for multi-selection, group drag, or quick actions
+  const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
+  const selectedNodeId = selectedNodeIds[selectedNodeIds.length - 1] || null;
+  const setSelectedNodeId = (id: string | null) => setSelectedNodeIds(id ? [id] : []);
+
+  // Selection Box state (Right-Click Drag Selection)
+  const [selectionBox, setSelectionBox] = useState<{
+    startCanvas: { x: number; y: number };
+    currentCanvas: { x: number; y: number };
+  } | null>(null);
+
+  // Right & Left Click tracking for clicks vs drag
+  const [rightClickStartScreen, setRightClickStartScreen] = useState<{ x: number; y: number } | null>(null);
+  const [isRightClickDragging, setIsRightClickDragging] = useState<boolean>(false);
+  const [leftClickStartScreen, setLeftClickStartScreen] = useState<{ x: number; y: number } | null>(null);
+  const [isLeftClickDragging, setIsLeftClickDragging] = useState<boolean>(false);
+
+  // Group Drag state (moving multiple selected nodes together)
+  const [isGroupDragging, setIsGroupDragging] = useState<boolean>(false);
+  const [groupDragStartMouse, setGroupDragStartMouse] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [groupDragInitialPositions, setGroupDragInitialPositions] = useState<Record<string, { x: number; y: number }>>({});
 
   // New todo input state per node
   const [newTodoTexts, setNewTodoTexts] = useState<Record<string, string>>({});
 
   // Todo Item Editing state
   const [editingTodo, setEditingTodo] = useState<{ nodeId: string; todoId: string; text: string } | null>(null);
+
+  // Todo Item Moving/Reordering state
+  const [movingTodo, setMovingTodo] = useState<{ nodeId: string; todoId: string } | null>(null);
 
   // Formatting menu open state per node & font size target ('title' | 'body')
   const [openFormatMenuNodeId, setOpenFormatMenuNodeId] = useState<string | null>(null);
@@ -276,6 +301,16 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
       const target = e.target as HTMLElement;
       if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
 
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedNodeIds.length > 0) {
+          e.preventDefault();
+          const setIds = new Set(selectedNodeIds);
+          setNodes((prev) => prev.filter((n) => !setIds.has(n.id)));
+          setConnections((prev) => prev.filter((c) => !setIds.has(c.fromNodeId) && !setIds.has(c.toNodeId)));
+          setSelectedNodeIds([]);
+        }
+      }
+
       if ((e.ctrlKey || e.metaKey) && e.key === 'c') {
         if (selectedNodeId) {
           const node = nodes.find(n => n.id === selectedNodeId);
@@ -334,7 +369,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
       document.removeEventListener('fullscreenchange', handleFSChange);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedNodeId, copiedNodeTemplate, nodes, pan, zoom]);
+  }, [selectedNodeId, selectedNodeIds, copiedNodeTemplate, nodes, pan, zoom]);
 
   const handleToggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -389,13 +424,69 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   const handleZoomIn = () => setZoom((prev) => Math.min(prev + 0.15, 2.5));
   const handleZoomOut = () => setZoom((prev) => Math.max(prev - 0.15, 0.3));
 
-  // Canvas Mouse Down (Start Pan or deselect)
+  // Delete All Selected Nodes
+  const handleDeleteSelectedNodes = () => {
+    if (selectedNodeIds.length === 0) return;
+    const setIds = new Set(selectedNodeIds);
+    setNodes((prev) => prev.filter((n) => !setIds.has(n.id)));
+    setConnections((prev) => prev.filter((c) => !setIds.has(c.fromNodeId) && !setIds.has(c.toNodeId)));
+    setSelectedNodeIds([]);
+  };
+
+  // Helper to convert screen client coordinates to inner canvas world coordinates
+  const getCanvasCoords = useCallback(
+    (clientX: number, clientY: number) => {
+      const rect = containerRef.current?.getBoundingClientRect() || { left: 0, top: 0 };
+      return {
+        x: (clientX - rect.left - pan.x) / zoom,
+        y: (clientY - rect.top - pan.y) / zoom,
+      };
+    },
+    [pan.x, pan.y, zoom]
+  );
+
+  // Canvas Mouse Down (Start Pan, Right-Click Box Selection, or Deselect)
   const handleCanvasMouseDown = (e: React.MouseEvent) => {
     setOpenFormatMenuNodeId(null);
-    if ((e.target as HTMLElement).getAttribute('data-canvas-bg') === 'true') {
+    const isCanvasBg = (e.target as HTMLElement).getAttribute('data-canvas-bg') === 'true';
+    const coords = getCanvasCoords(e.clientX, e.clientY);
+
+    // Right-Click on Canvas (e.button === 2)
+    if (e.button === 2) {
+      e.preventDefault();
+
+      setRightClickStartScreen({ x: e.clientX, y: e.clientY });
+      setIsRightClickDragging(false);
+
+      // If nodes are already selected, right-click dragging anywhere moves the group
+      if (selectedNodeIds.length > 0) {
+        setIsGroupDragging(true);
+        setGroupDragStartMouse({ x: e.clientX, y: e.clientY });
+        const initialPos: Record<string, { x: number; y: number }> = {};
+        nodes.forEach((n) => {
+          if (selectedNodeIds.includes(n.id)) {
+            initialPos[n.id] = { x: n.x, y: n.y };
+          }
+        });
+        setGroupDragInitialPositions(initialPos);
+        return;
+      }
+
+      // No nodes selected -> Start selection box exactly under the mouse pointer
+      setSelectionBox({
+        startCanvas: coords,
+        currentCanvas: coords,
+      });
+      return;
+    }
+
+    // Left-Click on Canvas Background (e.button === 0) -> Start Pan or prepare Deselect
+    if (e.button === 0 && isCanvasBg) {
+      setLeftClickStartScreen({ x: e.clientX, y: e.clientY });
+      setIsLeftClickDragging(false);
+
       setIsPanning(true);
       setStartPanMouse({ x: e.clientX - pan.x, y: e.clientY - pan.y });
-      setSelectedNodeId(null);
       if (connectingFromId) setConnectingFromId(null);
     }
   };
@@ -403,19 +494,101 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   // Global Mouse Move
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
-      const canvasX = (e.clientX - pan.x) / zoom;
-      const canvasY = (e.clientY - pan.y) / zoom;
-      setMouseCanvasPos({ x: canvasX, y: canvasY });
+      const coords = getCanvasCoords(e.clientX, e.clientY);
+      setMouseCanvasPos(coords);
 
+      if (rightClickStartScreen) {
+        const dist = Math.hypot(e.clientX - rightClickStartScreen.x, e.clientY - rightClickStartScreen.y);
+        if (dist > 4) {
+          setIsRightClickDragging(true);
+        }
+      }
+
+      if (leftClickStartScreen) {
+        const dist = Math.hypot(e.clientX - leftClickStartScreen.x, e.clientY - leftClickStartScreen.y);
+        if (dist > 4) {
+          setIsLeftClickDragging(true);
+        }
+      }
+
+      // 1. Selection Box Dragging
+      if (selectionBox) {
+        setSelectionBox((prev) => (prev ? { ...prev, currentCanvas: coords } : null));
+
+        const minX = Math.min(selectionBox.startCanvas.x, coords.x);
+        const maxX = Math.max(selectionBox.startCanvas.x, coords.x);
+        const minY = Math.min(selectionBox.startCanvas.y, coords.y);
+        const maxY = Math.max(selectionBox.startCanvas.y, coords.y);
+
+        const newlySelected = nodes
+          .filter((n) => {
+            if (hiddenNodes.has(n.id)) return false;
+            const nodeMinX = n.x;
+            const nodeMaxX = n.x + n.width;
+            const nodeMinY = n.y;
+            const nodeMaxY = n.y + n.height;
+            return nodeMinX <= maxX && nodeMaxX >= minX && nodeMinY <= maxY && nodeMaxY >= minY;
+          })
+          .map((n) => n.id);
+
+        setSelectedNodeIds(newlySelected);
+        return;
+      }
+
+      // 2. Group Dragging (Moving selected nodes together)
+      if (isGroupDragging) {
+        const dxScreen = e.clientX - groupDragStartMouse.x;
+        const dyScreen = e.clientY - groupDragStartMouse.y;
+        const dxCanvas = dxScreen / zoom;
+        const dyCanvas = dyScreen / zoom;
+
+        setNodes((prev) =>
+          prev.map((n) => {
+            if (groupDragInitialPositions[n.id] !== undefined) {
+              const init = groupDragInitialPositions[n.id];
+              return {
+                ...n,
+                x: init.x + dxCanvas,
+                y: init.y + dyCanvas,
+              };
+            }
+            return n;
+          })
+        );
+        return;
+      }
+
+      // 3. Single Node Dragging
+      if (draggingNodeId) {
+        setNodes((prev) =>
+          prev.map((n) => {
+            if (n.id === draggingNodeId) {
+              return {
+                ...n,
+                x: coords.x - dragOffset.x,
+                y: coords.y - dragOffset.y,
+              };
+            }
+            return n;
+          })
+        );
+        return;
+      }
+
+      // 4. Canvas Panning
       if (isPanning) {
         setPan({
           x: e.clientX - startPanMouse.x,
           y: e.clientY - startPanMouse.y,
         });
-      } else if (draggingConnectionId && connectionDragStart && initialCurveOffset) {
+        return;
+      }
+
+      // 5. Connection curve dragging
+      if (draggingConnectionId && connectionDragStart && initialCurveOffset) {
         const dx = (e.clientX - connectionDragStart.x) / zoom;
         const dy = (e.clientY - connectionDragStart.y) / zoom;
-        
+
         setConnections((prev) =>
           prev.map((c) =>
             c.id === draggingConnectionId
@@ -429,7 +602,11 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
               : c
           )
         );
-      } else if (resizingState) {
+        return;
+      }
+
+      // 6. Resizing Node
+      if (resizingState) {
         const dx = (e.clientX - resizingState.startMouseX) / zoom;
         const dy = (e.clientY - resizingState.startMouseY) / zoom;
 
@@ -472,20 +649,49 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             };
           })
         );
-      } else if (draggingNodeId) {
-        const newX = (e.clientX - pan.x) / zoom - dragOffset.x;
-        const newY = (e.clientY - pan.y) / zoom - dragOffset.y;
-
-        setNodes((prev) =>
-          prev.map((n) => (n.id === draggingNodeId ? { ...n, x: newX, y: newY } : n))
-        );
       }
     },
-    [isPanning, startPanMouse, pan, zoom, draggingNodeId, dragOffset, resizingState, draggingConnectionId, connectionDragStart, initialCurveOffset]
+    [
+      getCanvasCoords,
+      rightClickStartScreen,
+      leftClickStartScreen,
+      selectionBox,
+      isGroupDragging,
+      groupDragStartMouse,
+      groupDragInitialPositions,
+      draggingNodeId,
+      dragOffset,
+      isPanning,
+      startPanMouse,
+      draggingConnectionId,
+      connectionDragStart,
+      initialCurveOffset,
+      resizingState,
+      zoom,
+      nodes,
+      hiddenNodes,
+    ]
   );
 
   // Global Mouse Up
   const handleMouseUp = () => {
+    // If clicked or right clicked without dragging -> Deselect all nodes
+    if (
+      (rightClickStartScreen && !isRightClickDragging) ||
+      (leftClickStartScreen && !isLeftClickDragging)
+    ) {
+      setSelectedNodeIds([]);
+    }
+
+    setRightClickStartScreen(null);
+    setIsRightClickDragging(false);
+    setLeftClickStartScreen(null);
+    setIsLeftClickDragging(false);
+
+    setSelectionBox(null);
+    setIsGroupDragging(false);
+    setGroupDragInitialPositions({});
+
     setIsPanning(false);
     setDraggingNodeId(null);
     setResizingState(null);
@@ -686,10 +892,9 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     setNodeToDelete(null);
   };
 
-  // Node Drag Start
+  // Node Drag Start (Supports Right-Click Selection & Group Drag)
   const handleNodeMouseDown = (node: MindMapNode, e: React.MouseEvent) => {
     e.stopPropagation();
-    setSelectedNodeId(node.id);
 
     if (connectingFromId) {
       if (connectingFromId !== node.id) {
@@ -714,14 +919,69 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
       return;
     }
 
-    // Start node position drag
-    setDraggingNodeId(node.id);
-    const mouseCanvasX = (e.clientX - pan.x) / zoom;
-    const mouseCanvasY = (e.clientY - pan.y) / zoom;
-    setDragOffset({
-      x: mouseCanvasX - node.x,
-      y: mouseCanvasY - node.y,
-    });
+    // Right Click on Node (e.button === 2) -> Group Drag
+    if (e.button === 2) {
+      e.preventDefault();
+      setRightClickStartScreen({ x: e.clientX, y: e.clientY });
+      setIsRightClickDragging(false);
+
+      let currentSelection = selectedNodeIds;
+      if (!currentSelection.includes(node.id)) {
+        currentSelection = [node.id];
+        setSelectedNodeIds([node.id]);
+      }
+
+      setIsGroupDragging(true);
+      setGroupDragStartMouse({ x: e.clientX, y: e.clientY });
+      const initialPos: Record<string, { x: number; y: number }> = {};
+      nodes.forEach((n) => {
+        if (currentSelection.includes(n.id)) {
+          initialPos[n.id] = { x: n.x, y: n.y };
+        }
+      });
+      setGroupDragInitialPositions(initialPos);
+      return;
+    }
+
+    // Left Click on Node (e.button === 0)
+    if (e.button === 0) {
+      setLeftClickStartScreen({ x: e.clientX, y: e.clientY });
+      setIsLeftClickDragging(false);
+
+      let newSelected = selectedNodeIds;
+      if (e.ctrlKey || e.shiftKey || e.metaKey) {
+        if (selectedNodeIds.includes(node.id)) {
+          newSelected = selectedNodeIds.filter((id) => id !== node.id);
+        } else {
+          newSelected = [...selectedNodeIds, node.id];
+        }
+        setSelectedNodeIds(newSelected);
+      } else {
+        if (!selectedNodeIds.includes(node.id)) {
+          newSelected = [node.id];
+          setSelectedNodeIds([node.id]);
+        }
+      }
+
+      if (newSelected.length > 1 && newSelected.includes(node.id)) {
+        setIsGroupDragging(true);
+        setGroupDragStartMouse({ x: e.clientX, y: e.clientY });
+        const initialPos: Record<string, { x: number; y: number }> = {};
+        nodes.forEach((n) => {
+          if (newSelected.includes(n.id)) {
+            initialPos[n.id] = { x: n.x, y: n.y };
+          }
+        });
+        setGroupDragInitialPositions(initialPos);
+      } else {
+        setDraggingNodeId(node.id);
+        const coords = getCanvasCoords(e.clientX, e.clientY);
+        setDragOffset({
+          x: coords.x - node.x,
+          y: coords.y - node.y,
+        });
+      }
+    }
   };
 
   // Add todo to a node
@@ -804,6 +1064,63 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   // Cancel Editing Todo
   const handleCancelEditTodo = () => {
     setEditingTodo(null);
+  };
+
+  // Toggle or Perform Todo Reordering
+  const handleToggleMoveTodo = (nodeId: string, todoId: string, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    if (movingTodo && movingTodo.nodeId === nodeId && movingTodo.todoId === todoId) {
+      // Clicked again on active moving todo -> finalize and exit move mode
+      setMovingTodo(null);
+    } else if (movingTodo && movingTodo.nodeId === nodeId && movingTodo.todoId !== todoId) {
+      // Clicked on a different todo in the same node while move mode active -> swap positions!
+      handleSwapTodos(nodeId, movingTodo.todoId, todoId);
+    } else {
+      // Start move mode for this todo
+      setMovingTodo({ nodeId, todoId });
+    }
+  };
+
+  // Swap two todos inside a node
+  const handleSwapTodos = (nodeId: string, todoId1: string, todoId2: string) => {
+    setNodes((prev) =>
+      prev.map((n) => {
+        if (n.id === nodeId) {
+          const idx1 = n.todos.findIndex((t) => t.id === todoId1);
+          const idx2 = n.todos.findIndex((t) => t.id === todoId2);
+          if (idx1 !== -1 && idx2 !== -1) {
+            const newTodos = [...n.todos];
+            const temp = newTodos[idx1];
+            newTodos[idx1] = newTodos[idx2];
+            newTodos[idx2] = temp;
+            return { ...n, todos: newTodos };
+          }
+        }
+        return n;
+      })
+    );
+  };
+
+  // Move todo one position up or down
+  const handleMoveTodoDirection = (nodeId: string, todoId: string, direction: 'up' | 'down', e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setNodes((prev) =>
+      prev.map((n) => {
+        if (n.id === nodeId) {
+          const idx = n.todos.findIndex((t) => t.id === todoId);
+          if (idx === -1) return n;
+          const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
+          if (targetIdx < 0 || targetIdx >= n.todos.length) return n;
+
+          const newTodos = [...n.todos];
+          const temp = newTodos[idx];
+          newTodos[idx] = newTodos[targetIdx];
+          newTodos[targetIdx] = temp;
+          return { ...n, todos: newTodos };
+        }
+        return n;
+      })
+    );
   };
 
   // Update Node Title
@@ -1052,6 +1369,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onWheel={handleWheel}
+        onContextMenu={(e) => e.preventDefault()}
         className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing bg-black"
       >
         {/* Infinite Transformed World Layer */}
@@ -1245,11 +1563,32 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             })()}
           </svg>
 
+          {/* Selection Box overlay in canvas coordinates */}
+          {selectionBox && (() => {
+            const minX = Math.min(selectionBox.startCanvas.x, selectionBox.currentCanvas.x);
+            const maxX = Math.max(selectionBox.startCanvas.x, selectionBox.currentCanvas.x);
+            const minY = Math.min(selectionBox.startCanvas.y, selectionBox.currentCanvas.y);
+            const maxY = Math.max(selectionBox.startCanvas.y, selectionBox.currentCanvas.y);
+            const w = maxX - minX;
+            const h = maxY - minY;
+
+            return (
+              <div
+                style={{
+                  transform: `translate(${minX}px, ${minY}px)`,
+                  width: `${w}px`,
+                  height: `${h}px`,
+                }}
+                className="absolute top-0 left-0 border-2 border-cyan-400 bg-cyan-500/20 rounded-xl pointer-events-none z-40 shadow-[0_0_20px_rgba(34,211,238,0.4)] border-dashed"
+              />
+            );
+          })()}
+
           {/* Interactive Mind Map Nodes */}
           {nodes.map((node) => {
             if (hiddenNodes.has(node.id)) return null;
 
-            const isSelected = selectedNodeId === node.id;
+            const isSelected = selectedNodeIds.includes(node.id);
             const isConnecting = connectingFromId === node.id;
 
             const colorStyles = (() => {
@@ -1653,15 +1992,31 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                   /* Standard Node Body: List of Todos with Checkboxes */
                   <div className="p-2 flex-1 flex flex-col justify-between space-y-1.5 overflow-hidden min-h-0">
                     <div className="space-y-1 flex-1 overflow-y-auto pr-1 min-h-0">
-                      {node.todos.map((todo) => {
+                      {node.todos.map((todo, todoIndex) => {
                         const isEditingThis =
                           editingTodo?.nodeId === node.id && editingTodo?.todoId === todo.id;
+                        const isMovingThis =
+                          movingTodo?.nodeId === node.id && movingTodo?.todoId === todo.id;
+                        const isNodeMovingActive =
+                          movingTodo?.nodeId === node.id;
 
                         return (
                           <div
                             key={todo.id}
                             dir="rtl"
-                            className="flex items-center justify-between gap-1.5 p-1.5 rounded-lg bg-[#0d0221]/60 border border-fuchsia-900/40 hover:border-fuchsia-700/50 transition group/item"
+                            className={`flex items-center justify-between gap-1.5 p-1.5 rounded-lg transition group/item ${
+                              isMovingThis
+                                ? 'bg-amber-950/80 border border-amber-400/90 shadow-[0_0_10px_rgba(245,158,11,0.3)]'
+                                : isNodeMovingActive
+                                ? 'bg-[#0d0221]/80 border border-amber-500/30 hover:border-amber-400 cursor-pointer'
+                                : 'bg-[#0d0221]/60 border border-fuchsia-900/40 hover:border-fuchsia-700/50'
+                            }`}
+                            onClick={(e) => {
+                              if (isNodeMovingActive && !isMovingThis && !isEditingThis) {
+                                e.stopPropagation();
+                                handleSwapTodos(node.id, movingTodo.todoId, todo.id);
+                              }
+                            }}
                           >
                             {isEditingThis ? (
                               /* Inline Edit Mode */
@@ -1729,7 +2084,8 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                                   </span>
                                 </div>
 
-                                <div className="hidden group-hover/item:flex items-center gap-1 shrink-0">
+                                <div className={`${isMovingThis || isNodeMovingActive ? 'flex' : 'hidden group-hover/item:flex'} items-center gap-1 shrink-0`}>
+                                  {/* Edit Button */}
                                   <button
                                     onClick={(e) => handleStartEditTodo(node.id, todo.id, todo.text, e)}
                                     className="text-cyan-400 hover:text-cyan-300 p-0.5 hover:bg-cyan-950/60 rounded transition"
@@ -1737,6 +2093,59 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                                   >
                                     <Pencil className="w-3.5 h-3.5" />
                                   </button>
+
+                                  {/* Move Controls */}
+                                  {isMovingThis ? (
+                                    <>
+                                      {/* Move Up */}
+                                      <button
+                                        onClick={(e) => handleMoveTodoDirection(node.id, todo.id, 'up', e)}
+                                        disabled={todoIndex === 0}
+                                        className={`p-0.5 rounded transition ${
+                                          todoIndex === 0
+                                            ? 'text-fuchsia-700/30 cursor-not-allowed'
+                                            : 'text-cyan-300 hover:bg-cyan-900/60 hover:text-white'
+                                        }`}
+                                        title="انتقال به یک خط بالاتر"
+                                      >
+                                        <ChevronUp className="w-4 h-4 stroke-[2.5]" />
+                                      </button>
+
+                                      {/* Move Down */}
+                                      <button
+                                        onClick={(e) => handleMoveTodoDirection(node.id, todo.id, 'down', e)}
+                                        disabled={todoIndex === node.todos.length - 1}
+                                        className={`p-0.5 rounded transition ${
+                                          todoIndex === node.todos.length - 1
+                                            ? 'text-fuchsia-700/30 cursor-not-allowed'
+                                            : 'text-cyan-300 hover:bg-cyan-900/60 hover:text-white'
+                                        }`}
+                                        title="انتقال به یک خط پایین‌تر"
+                                      >
+                                        <ChevronDown className="w-4 h-4 stroke-[2.5]" />
+                                      </button>
+
+                                      {/* Finish Move Toggle Button */}
+                                      <button
+                                        onClick={(e) => handleToggleMoveTodo(node.id, todo.id, e)}
+                                        className="p-1 rounded bg-amber-500 hover:bg-amber-400 text-black font-bold transition shadow-[0_0_8px_rgba(245,158,11,0.6)]"
+                                        title="تثبیت موقعیت (کلیک مجدد برای قرارگیری)"
+                                      >
+                                        <ArrowUpDown className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    /* Inactive Move Button */
+                                    <button
+                                      onClick={(e) => handleToggleMoveTodo(node.id, todo.id, e)}
+                                      className="text-amber-400/90 hover:text-amber-300 p-0.5 hover:bg-amber-950/60 rounded transition"
+                                      title={isNodeMovingActive ? "جایگزینی جایگاه با کار انتخابی" : "جابه‌جایی کار (بالا/پایین)"}
+                                    >
+                                      <ArrowUpDown className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+
+                                  {/* Delete Button */}
                                   <button
                                     onClick={() => handleDeleteTodo(node.id, todo.id)}
                                     className="text-rose-400/80 hover:text-rose-300 p-0.5 hover:bg-rose-950/60 rounded transition"
@@ -1787,6 +2196,40 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             );
           })}
         </div>
+
+        {/* Multi-Selection Control Floating Bar */}
+        {selectedNodeIds.length > 1 && (
+          <div
+            className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-[#0a021b]/95 border border-cyan-500/80 rounded-2xl px-4 py-2.5 shadow-[0_0_30px_rgba(6,182,212,0.5)] backdrop-blur-md flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200 pointer-events-auto"
+            dir="rtl"
+          >
+            <div className="flex items-center gap-2 text-cyan-300 text-xs font-extrabold">
+              <span className="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-pulse" />
+              <span>{selectedNodeIds.length} نود انتخاب شده</span>
+            </div>
+
+            <div className="h-4 w-px bg-cyan-500/30" />
+
+            <span className="text-[11px] text-fuchsia-200/90 hidden sm:inline font-semibold">
+              کلیک راست و درگ برای جابه‌جایی گروهی
+            </span>
+
+            <button
+              onClick={() => setSelectedNodeIds([])}
+              className="text-fuchsia-300 hover:text-white text-xs font-bold transition px-2.5 py-1 rounded-lg hover:bg-fuchsia-950/80 border border-fuchsia-800/40"
+            >
+              لغو انتخاب
+            </button>
+
+            <button
+              onClick={handleDeleteSelectedNodes}
+              className="text-rose-300 hover:text-rose-100 text-xs font-bold transition px-2.5 py-1 rounded-lg bg-rose-950/80 hover:bg-rose-900 border border-rose-800/80 flex items-center gap-1.5 shadow-sm"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>حذف گروهی ({selectedNodeIds.length})</span>
+            </button>
+          </div>
+        )}
 
         {/* Bottom Helper Bar */}
         <div className="absolute bottom-4 left-4 right-4 sm:left-6 sm:right-auto bg-[#0d0221]/90 backdrop-blur-md border border-fuchsia-800/60 rounded-2xl p-3 shadow-2xl flex items-center gap-4 text-xs text-fuchsia-300 pointer-events-auto">

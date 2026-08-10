@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { AppSettings, FocusSession } from '../types';
 import { formatDurationHuman, formatShamsiDate, getTodayDateStr, getAllTrackedDates } from '../utils/time';
 import { getInitialStartDate, getExactIntervalReportForDate } from '../utils/storage';
-import { BarChart3, Calendar, Clock, Hourglass, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { BarChart3, Calendar, Clock, Hourglass, Trash2, ChevronDown, ChevronUp, AlertTriangle, X } from 'lucide-react';
 
 interface DailyFocusSummarySidebarProps {
   settings: AppSettings;
@@ -11,6 +11,7 @@ interface DailyFocusSummarySidebarProps {
   selectedDateStr: string;
   onSelectDate: (dateStr: string) => void;
   onClearDay?: (dateStr: string) => void;
+  clearedDates?: string[];
 }
 
 export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> = ({
@@ -20,13 +21,15 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
   selectedDateStr,
   onSelectDate,
   onClearDay,
+  clearedDates = [],
 }) => {
   const [showAllDays, setShowAllDays] = useState<boolean>(false);
+  const [confirmDeleteDate, setConfirmDeleteDate] = useState<string | null>(null);
   const todayStr = getTodayDateStr();
   const initialStartDate = getInitialStartDate();
 
   // Get all dates from initial start date up to today (inclusive), plus any dates with sessions
-  const dateList = getAllTrackedDates(sessions, initialStartDate);
+  const dateList = getAllTrackedDates(sessions, initialStartDate, clearedDates);
 
   // Compute daily stats for each date
   const dailyData = dateList.map((dateStr) => {
@@ -36,7 +39,7 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
     let unusedSec = 0;
 
     if (daySessions.length > 0 || (dateStr === todayStr && activeSession) || dateStr <= todayStr) {
-      const intervals = getExactIntervalReportForDate(dateStr, daySessions, activeSession, false);
+      const intervals = getExactIntervalReportForDate(dateStr, daySessions, activeSession, false, clearedDates);
 
       totalFocusSec = intervals
         .filter((i) => i.type === 'focus')
@@ -175,14 +178,12 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
                       </span>
                     )}
 
-                    {onClearDay && (item.hasSessions || item.totalFocusSec > 0 || item.unusedSec > 0) && (
+                    {onClearDay && !item.isToday && (
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
-                          if (window.confirm(`آیا از پاک کردن تمامی زمان‌های ثبت‌شده برای روز ${formatDateLabel(item.dateStr)} اطمینان دارید؟`)) {
-                            onClearDay(item.dateStr);
-                          }
+                          setConfirmDeleteDate(item.dateStr);
                         }}
                         className="p-1 rounded-lg bg-rose-950/70 hover:bg-rose-900 text-rose-300 border border-rose-800/60 transition shadow-[0_0_8px_rgba(225,29,72,0.2)]"
                         title="پاک کردن داده‌های این روز"
@@ -268,6 +269,61 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
           )}
         </div>
       </div>
+
+      {/* Confirmation Modal */}
+      {confirmDeleteDate && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+          <div className="bg-[#120326] border border-rose-600/50 text-fuchsia-100 rounded-2xl p-6 max-w-md w-full shadow-[0_0_30px_rgba(225,29,72,0.3)] animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between mb-4 pb-3 border-b border-fuchsia-900/60">
+              <div className="flex items-center gap-3 text-rose-400">
+                <AlertTriangle className="w-6 h-6 shrink-0" />
+                <h3 className="text-base font-bold text-fuchsia-100">تایید حذف داده‌های روز</h3>
+              </div>
+              <button
+                onClick={() => setConfirmDeleteDate(null)}
+                className="text-fuchsia-400 hover:text-white p-1 rounded-lg hover:bg-fuchsia-900/50 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <p className="text-sm text-fuchsia-200 mb-6 leading-relaxed">
+              آیا از پاک کردن تمامی داده‌ها و زمان‌های ثبت‌شده برای روز{' '}
+              <span className="font-extrabold text-cyan-300 dir-ltr inline-block">
+                {formatShamsiDate(confirmDeleteDate)} ({confirmDeleteDate})
+              </span>{' '}
+              اطمینان دارید؟
+              <br />
+              <span className="text-xs text-fuchsia-400 mt-2 block">
+                با تایید این عملیات، داده‌های این روز از لیست تاریخچه حذف شده و زمان متناظر از مجموع زمان‌های تمرکز و غیرفعال کسر می‌گردد.
+              </span>
+            </p>
+
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmDeleteDate(null)}
+                className="px-4 py-2.5 rounded-xl bg-fuchsia-950/80 hover:bg-fuchsia-900 border border-fuchsia-800 text-fuchsia-200 text-sm font-bold transition"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (onClearDay && confirmDeleteDate) {
+                    onClearDay(confirmDeleteDate);
+                  }
+                  setConfirmDeleteDate(null);
+                }}
+                className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-sm font-bold transition shadow-[0_0_15px_rgba(225,29,72,0.4)] flex items-center gap-2"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>حذف شود</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };

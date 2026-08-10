@@ -13,6 +13,9 @@ import {
   loadSessions,
   loadSettings,
   loadTasks,
+  loadClearedDates,
+  addClearedDate,
+  removeClearedDate,
   saveSession,
   saveSettings,
   saveTasks,
@@ -30,6 +33,7 @@ import {
   SETTINGS_KEY,
   INITIAL_START_DATE_KEY,
   INTERVAL_REPORTS_KEY,
+  CLEARED_DATES_KEY,
   DEFAULT_SETTINGS,
   getInitialStartDate
 } from './utils/storage';
@@ -44,6 +48,7 @@ export default function App() {
   // Persistence State
   const [sessions, setSessions] = useState<FocusSession[]>(() => loadSessions());
   const [tasks, setTasks] = useState<TaskItem[]>(() => loadTasks());
+  const [clearedDates, setClearedDates] = useState<string[]>(() => loadClearedDates());
 
   // Load initial timer state if exists
   const initialTimerState = useRef(loadActiveTimerState());
@@ -318,6 +323,12 @@ export default function App() {
       if (serverIntervalReports && typeof serverIntervalReports === 'object') {
         localStorage.setItem(INTERVAL_REPORTS_KEY, JSON.stringify(serverIntervalReports));
       }
+
+      const serverClearedDates = await fetchServerData<string[]>(CLEARED_DATES_KEY);
+      if (Array.isArray(serverClearedDates)) {
+        localStorage.setItem(CLEARED_DATES_KEY, JSON.stringify(serverClearedDates));
+        setClearedDates(serverClearedDates);
+      }
     }
 
     initStorageSync();
@@ -329,10 +340,17 @@ export default function App() {
     saveAllSessions(updated);
     setSessions(updated);
     clearIntervalReportForDate(dateStr);
+    addClearedDate(dateStr);
+    setClearedDates(loadClearedDates());
+    if (selectedDateStr === dateStr) {
+      setSelectedDateStr(getTodayDateStr());
+    }
   };
 
   // Handle Add Manual Session
   const handleAddSession = (newSession: FocusSession) => {
+    removeClearedDate(newSession.dateStr);
+    setClearedDates(loadClearedDates());
     const updated = [...sessions, newSession];
     saveAllSessions(updated);
     setSessions(updated);
@@ -445,6 +463,7 @@ export default function App() {
                 selectedDateStr={selectedDateStr}
                 onSelectDate={(d) => setSelectedDateStr(d)}
                 onClearDay={handleClearDaySessions}
+                clearedDates={clearedDates}
               />
             </div>
           </div>
