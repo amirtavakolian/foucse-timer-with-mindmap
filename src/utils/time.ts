@@ -52,9 +52,11 @@ export function formatDurationHuman(seconds: number, lang: 'fa' | 'en' = 'en'): 
 
 /**
  * Format timestamp (ms) into HH:MM string (e.g. "02:37" or "14:05")
+ * Rounds UP to the next minute if there are leftover seconds/ms
  */
 export function formatHHMM(timestampMs: number, usePersian = false): string {
-  const date = new Date(timestampMs);
+  const roundedMs = Math.ceil(timestampMs / 60000) * 60000;
+  const date = new Date(roundedMs);
   const h = date.getHours().toString().padStart(2, '0');
   const m = date.getMinutes().toString().padStart(2, '0');
   const str = `${h}:${m}`;

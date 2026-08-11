@@ -66,7 +66,7 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
       const overlapEnd = Math.min(curEndMs, hEnd);
 
       if (overlapEnd > overlapStart) {
-        const overlapMins = Math.round((overlapEnd - overlapStart) / 60);
+        const overlapMins = Math.ceil((overlapEnd - overlapStart) / 60);
         if (interval.type === 'focus') {
           hourlyMap[h].focusMins += overlapMins;
         } else {
@@ -88,7 +88,7 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
 
   // Prepare Sequential Intervals Data for Bar Chart
   const sequentialChartData = intervals.map((interval, index) => {
-    const mins = Math.round(interval.durationSeconds / 60);
+    const mins = Math.ceil(interval.durationSeconds / 60);
     const hours = (interval.durationSeconds / 3600).toFixed(1);
     return {
       id: interval.id || `interval_${index}`,
@@ -108,8 +108,8 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
 
   // Pie Chart Data
   const pieData = [
-    { name: 'تمرکز (Focus)', value: Math.round(totalFocusSec / 60), color: '#06b6d4' },
-    { name: 'استراحت (Idle)', value: Math.round(totalIdleSec / 60), color: '#f59e0b' },
+    { name: 'تمرکز (Focus)', value: Math.ceil(totalFocusSec / 60), color: '#06b6d4' },
+    { name: 'استراحت (Idle)', value: Math.ceil(totalIdleSec / 60), color: '#f59e0b' },
   ].filter((d) => d.value > 0);
 
   // Custom Tooltip for Hourly Bar/Area Chart

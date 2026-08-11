@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Clock, Calendar, Zap, Info, ChevronRight, ChevronLeft, Trash2, CheckCircle2, Coffee, Filter, Hourglass, Plus, X, Check, BarChart2, AlertTriangle } from 'lucide-react';
+import { Clock, Calendar, Zap, Info, ChevronRight, ChevronLeft, Trash2, CheckCircle2, Coffee, Filter, Hourglass, Plus, X, Check, BarChart2, AlertTriangle, GitCompare } from 'lucide-react';
 import { AppSettings, FocusSession, HourFocusData } from '../types';
 import { calculate24HourBreakdown, formatDurationHuman, formatHourLabel, formatShamsiDate, generateDayIntervals, getTodayDateStr, toPersianDigits, TimeIntervalRecord } from '../utils/time';
 import { getExactIntervalReportForDate, saveIntervalReportForDate, clearIntervalReportForDate } from '../utils/storage';
 import { IntervalChartModal } from './IntervalChartModal';
+import { CompareModal } from './CompareModal';
 
 interface Timeline24hProps {
   settings: AppSettings;
@@ -14,6 +15,7 @@ interface Timeline24hProps {
   onClearDay: (dateStr: string) => void;
   onAddSession?: (session: FocusSession) => void;
   onDeleteSession?: (sessionId: string) => void;
+  clearedDates?: string[];
 }
 
 export const Timeline24h: React.FC<Timeline24hProps> = ({
@@ -25,12 +27,14 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
   onClearDay,
   onAddSession,
   onDeleteSession,
+  clearedDates = [],
 }) => {
   const todayStr = getTodayDateStr();
   const isToday = selectedDateStr === todayStr;
 
   const [intervalFilter, setIntervalFilter] = useState<'all' | 'focus' | 'idle'>('all');
   const [showChartModal, setShowChartModal] = useState(false);
+  const [showCompareModal, setShowCompareModal] = useState(false);
   const [confirmClearDay, setConfirmClearDay] = useState(false);
   const [confirmDeleteSessionId, setConfirmDeleteSessionId] = useState<string | null>(null);
 
@@ -283,7 +287,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
               </button>
             </div>
 
-            {/* Action Buttons: View Chart & Add Manual Interval (Strictly 1 Row) */}
+            {/* Action Buttons: View Chart, Compare & Add Manual Interval */}
             <div className="flex items-center gap-2 flex-nowrap">
               <button
                 onClick={() => setShowChartModal(true)}
@@ -291,6 +295,14 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
               >
                 <BarChart2 className="w-4 h-4" />
                 <span>نمودار بازه‌ها</span>
+              </button>
+
+              <button
+                onClick={() => setShowCompareModal(true)}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white text-xs font-bold transition shadow-[0_0_12px_rgba(34,211,238,0.3)] shrink-0 cursor-pointer"
+              >
+                <GitCompare className="w-4 h-4" />
+                <span>مقایسه</span>
               </button>
 
               <button
@@ -519,6 +531,15 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
         onClose={() => setShowChartModal(false)}
         selectedDateStr={selectedDateStr}
         intervals={intervals}
+      />
+
+      {/* Compare Modal */}
+      <CompareModal
+        isOpen={showCompareModal}
+        onClose={() => setShowCompareModal(false)}
+        sessions={sessions}
+        activeSession={activeSession}
+        clearedDates={clearedDates}
       />
 
       {/* Clear Day Confirmation Modal */}

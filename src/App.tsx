@@ -479,6 +479,7 @@ export default function App() {
               onClearDay={handleClearDaySessions}
               onAddSession={handleAddSession}
               onDeleteSession={handleDeleteSession}
+              clearedDates={clearedDates}
             />
           </section>
 
