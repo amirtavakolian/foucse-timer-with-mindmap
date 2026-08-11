@@ -30,8 +30,10 @@ import {
   StickyNote,
   Bold,
   Italic,
-  Palette
+  Palette,
+  ListPlus
 } from 'lucide-react';
+import { toPersianDigits } from '../utils/time';
 
 export interface MindMapTodo {
   id: string;
@@ -228,6 +230,8 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   // New todo input state per node
   const [newTodoTexts, setNewTodoTexts] = useState<Record<string, string>>({});
+  const [batchTodoOpenMap, setBatchTodoOpenMap] = useState<Record<string, boolean>>({});
+  const [batchTodoTexts, setBatchTodoTexts] = useState<Record<string, string>>({});
 
   // Todo Item Editing state
   const [editingTodo, setEditingTodo] = useState<{ nodeId: string; todoId: string; text: string } | null>(null);
@@ -1002,6 +1006,39 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     );
 
     setNewTodoTexts((prev) => ({ ...prev, [nodeId]: '' }));
+  };
+
+  // Add batch multi-line todos to a node
+  const handleBatchAddTodosToNode = (nodeId: string) => {
+    const rawText = batchTodoTexts[nodeId] || '';
+    const lines = rawText
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0);
+
+    if (lines.length === 0) return;
+
+    const now = Date.now();
+    const newTodos: MindMapTodo[] = lines.map((line, idx) => ({
+      id: `t_${now}_${idx}`,
+      text: line,
+      completed: false,
+    }));
+
+    setNodes((prev) =>
+      prev.map((n) => {
+        if (n.id === nodeId) {
+          return {
+            ...n,
+            todos: [...n.todos, ...newTodos],
+          };
+        }
+        return n;
+      })
+    );
+
+    setBatchTodoTexts((prev) => ({ ...prev, [nodeId]: '' }));
+    setBatchTodoOpenMap((prev) => ({ ...prev, [nodeId]: false }));
   };
 
   // Toggle todo completion
@@ -2162,32 +2199,109 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     </div>
 
                     {!node.isLocked && (
-                      <div className="pt-2 border-t border-fuchsia-900/40 flex items-center gap-1.5" dir="rtl">
-                        <input
-                          type="text"
-                          dir="rtl"
-                          value={newTodoTexts[node.id] || ''}
-                          onChange={(e) =>
-                            setNewTodoTexts((prev) => ({ ...prev, [node.id]: e.target.value }))
-                          }
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleAddTodoToNode(node.id);
+                      <div className="pt-2 border-t border-fuchsia-900/40 flex flex-col gap-1.5" dir="rtl">
+                        <div className="flex items-center gap-1.5">
+                          <input
+                            type="text"
+                            dir="rtl"
+                            value={newTodoTexts[node.id] || ''}
+                            onChange={(e) =>
+                              setNewTodoTexts((prev) => ({ ...prev, [node.id]: e.target.value }))
                             }
-                          }}
-                          placeholder="+ افزودن کار جدید..."
-                          style={{ fontSize: `${bodyFontPx}px` }}
-                          className={`flex-1 px-2.5 py-1 rounded-lg bg-[#0d0221] border border-fuchsia-800/60 text-fuchsia-100 placeholder-fuchsia-400/40 outline-none focus:border-cyan-400 text-right ${
-                            node.isBold ? 'font-bold' : 'font-normal'
-                          } ${node.isItalic ? 'italic' : ''}`}
-                        />
-                        <button
-                          onClick={() => handleAddTodoToNode(node.id)}
-                          className="p-1 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold transition"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                handleAddTodoToNode(node.id);
+                              }
+                            }}
+                            placeholder="+ افزودن کار جدید..."
+                            style={{ fontSize: `${bodyFontPx}px` }}
+                            className={`flex-1 min-w-0 px-2.5 py-1 rounded-lg bg-[#0d0221] border border-fuchsia-800/60 text-fuchsia-100 placeholder-fuchsia-400/40 outline-none focus:border-cyan-400 text-right ${
+                              node.isBold ? 'font-bold' : 'font-normal'
+                            } ${node.isItalic ? 'italic' : ''}`}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleAddTodoToNode(node.id)}
+                            className="p-1 rounded-lg bg-fuchsia-600 hover:bg-fuchsia-500 text-white font-bold transition shrink-0 cursor-pointer"
+                            title="افزودن کار (تک خطی)"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Batch Multi-line Task Input Toggle Button */}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setBatchTodoOpenMap((prev) => ({ ...prev, [node.id]: !prev[node.id] }))
+                            }
+                            className={`p-1 rounded-lg border transition shrink-0 cursor-pointer ${
+                              batchTodoOpenMap[node.id]
+                                ? 'bg-cyan-500 text-black border-cyan-300 shadow-[0_0_10px_rgba(34,211,238,0.6)]'
+                                : 'bg-fuchsia-950/80 hover:bg-fuchsia-900 text-cyan-300 border-fuchsia-800/60 hover:border-cyan-500/60'
+                            }`}
+                            title="افزودن متنی چند خطی کارها (ورود چند کار همزمان)"
+                          >
+                            <ListPlus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        {/* Batch Textarea Panel */}
+                        {batchTodoOpenMap[node.id] && (
+                          <div className="p-2 rounded-xl bg-[#080214] border border-cyan-500/60 shadow-[0_0_15px_rgba(6,182,212,0.25)] space-y-2 animate-in fade-in duration-150">
+                            <div className="flex items-center justify-between text-[10px] font-extrabold text-cyan-300">
+                              <span className="flex items-center gap-1">
+                                <ListPlus className="w-3.5 h-3.5 text-cyan-400" />
+                                <span>ورود گروهی کارهای چند خطی:</span>
+                              </span>
+                              <span className="text-[9px] text-fuchsia-300/70 font-normal">هر خط = یک کار جدید</span>
+                            </div>
+
+                            <textarea
+                              rows={5}
+                              dir="rtl"
+                              value={batchTodoTexts[node.id] || ''}
+                              onChange={(e) =>
+                                setBatchTodoTexts((prev) => ({ ...prev, [node.id]: e.target.value }))
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                                  e.preventDefault();
+                                  handleBatchAddTodosToNode(node.id);
+                                }
+                              }}
+                              placeholder={'متن چند خطی خود را اینجا وارد کنید...\nمثال:\n۲.۱: گوروتین چیست؟\n۲.۲: ایجاد Goroutineها\n۲.۳: چرخه حیات گوروتین'}
+                              className="w-full p-2 text-xs rounded-lg bg-[#0d0221] border border-fuchsia-800/80 text-fuchsia-100 placeholder-fuchsia-400/35 outline-none focus:border-cyan-400 resize-y leading-relaxed"
+                            />
+
+                            <div className="flex items-center justify-between gap-1.5 pt-0.5">
+                              <span className="text-[10px] font-bold text-fuchsia-300/80">
+                                تعداد: {toPersianDigits((batchTodoTexts[node.id] || '').split(/\r?\n/).filter((l) => l.trim().length > 0).length)} خط
+                              </span>
+
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setBatchTodoOpenMap((prev) => ({ ...prev, [node.id]: false }))
+                                  }
+                                  className="px-2 py-0.5 rounded-md text-[10px] font-semibold text-fuchsia-300 hover:text-white hover:bg-fuchsia-950/60 border border-fuchsia-800/40 transition cursor-pointer"
+                                >
+                                  لغو
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleBatchAddTodosToNode(node.id)}
+                                  disabled={!(batchTodoTexts[node.id] || '').trim()}
+                                  className="px-2.5 py-0.5 rounded-md text-[10px] font-extrabold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 shadow-[0_0_10px_rgba(6,182,212,0.3)] cursor-pointer"
+                                >
+                                  <Check className="w-3 h-3" />
+                                  <span>ثبت همه خط‌ها</span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Check, Trash2, ListTodo, Target, Network, Sparkles } from 'lucide-react';
+import { Plus, Check, Trash2, ListTodo, Target, Network, Sparkles, ListPlus } from 'lucide-react';
 import { TaskItem } from '../types';
 import { toPersianDigits } from '../utils/time';
 import { MindMapModal } from './MindMapModal';
@@ -19,6 +19,8 @@ export const TaskList: React.FC<TaskListProps> = ({
 }) => {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
+  const [isBatchOpen, setIsBatchOpen] = useState(false);
+  const [batchText, setBatchText] = useState('');
 
   const handleAddTask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +36,28 @@ export const TaskList: React.FC<TaskListProps> = ({
 
     onUpdateTasks([...tasks, newTask]);
     setNewTaskTitle('');
+  };
+
+  const handleBatchAddTasks = () => {
+    const lines = batchText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l.length > 0);
+
+    if (lines.length === 0) return;
+
+    const now = Date.now();
+    const newTasksList: TaskItem[] = lines.map((line, idx) => ({
+      id: `${now}_${idx}`,
+      title: line,
+      completed: false,
+      targetMinutes: 30,
+      completedMinutes: 0,
+    }));
+
+    onUpdateTasks([...tasks, ...newTasksList]);
+    setBatchText('');
+    setIsBatchOpen(false);
   };
 
   const handleToggleTask = (id: string) => {
@@ -82,22 +106,89 @@ export const TaskList: React.FC<TaskListProps> = ({
       </div>
 
       {/* Add Task Input */}
-      <form onSubmit={handleAddTask} className="flex gap-2 my-4">
-        <input
-          type="text"
-          value={newTaskTitle}
-          onChange={(e) => setNewTaskTitle(e.target.value)}
-          placeholder="Add a new focus task..."
-          className="flex-1 px-4 py-2.5 rounded-xl bg-[#150533]/80 border border-fuchsia-800/60 focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-500/30 text-fuchsia-100 text-sm outline-none placeholder-fuchsia-400/40 font-medium"
-        />
-        <button
-          type="submit"
-          className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-extrabold text-sm transition flex items-center gap-1.5 shadow-[0_0_15px_rgba(217,70,239,0.35)]"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Add</span>
-        </button>
-      </form>
+      <div className="my-4 space-y-2">
+        <form onSubmit={handleAddTask} className="flex gap-2">
+          <input
+            type="text"
+            value={newTaskTitle}
+            onChange={(e) => setNewTaskTitle(e.target.value)}
+            placeholder="افزودن کار جدید..."
+            className="flex-1 px-4 py-2.5 rounded-xl bg-[#150533]/80 border border-fuchsia-800/60 focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-500/30 text-fuchsia-100 text-sm outline-none placeholder-fuchsia-400/40 font-medium"
+          />
+          <button
+            type="submit"
+            className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-fuchsia-600 to-pink-600 hover:from-fuchsia-500 hover:to-pink-500 text-white font-extrabold text-sm transition flex items-center gap-1 shadow-[0_0_15px_rgba(217,70,239,0.35)] cursor-pointer shrink-0"
+            title="افزودن کار (تک خطی)"
+          >
+            <Plus className="w-4 h-4" />
+            <span>افزودن</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setIsBatchOpen(!isBatchOpen)}
+            className={`px-3 py-2.5 rounded-xl border transition flex items-center gap-1.5 shrink-0 cursor-pointer ${
+              isBatchOpen
+                ? 'bg-cyan-500 text-black border-cyan-300 shadow-[0_0_12px_rgba(34,211,238,0.5)]'
+                : 'bg-[#150533]/80 hover:bg-fuchsia-950 text-cyan-300 border-fuchsia-800/60 hover:border-cyan-500/60'
+            }`}
+            title="افزودن چند خطی (گروهی)"
+          >
+            <ListPlus className="w-4 h-4" />
+          </button>
+        </form>
+
+        {isBatchOpen && (
+          <div className="p-3 rounded-2xl bg-[#090217] border border-cyan-500/60 shadow-[0_0_18px_rgba(6,182,212,0.25)] space-y-2 animate-in fade-in duration-150">
+            <div className="flex items-center justify-between text-xs font-extrabold text-cyan-300">
+              <span className="flex items-center gap-1.5">
+                <ListPlus className="w-4 h-4 text-cyan-400" />
+                <span>ورود گروهی کارهای چند خطی:</span>
+              </span>
+              <span className="text-[10px] text-fuchsia-300/70 font-normal">هر خط = یک کار جدید</span>
+            </div>
+
+            <textarea
+              rows={5}
+              dir="rtl"
+              value={batchText}
+              onChange={(e) => setBatchText(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                  e.preventDefault();
+                  handleBatchAddTasks();
+                }
+              }}
+              placeholder={'متن چند خطی خود را وارد یا پیست کنید...\nمثال:\n۲.۱: گوروتین چیست؟\n۲.۲: ایجاد Goroutineها\n۲.۳: چرخه حیات گوروتین'}
+              className="w-full p-2.5 text-xs rounded-xl bg-[#0d0221] border border-fuchsia-800/80 text-fuchsia-100 placeholder-fuchsia-400/35 outline-none focus:border-cyan-400 resize-y leading-relaxed"
+            />
+
+            <div className="flex items-center justify-between gap-2 pt-1">
+              <span className="text-xs font-bold text-fuchsia-300/80">
+                تعداد خط‌ها: {toPersianDigits(batchText.split(/\r?\n/).filter((l) => l.trim().length > 0).length)}
+              </span>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setIsBatchOpen(false)}
+                  className="px-3 py-1 rounded-lg text-xs font-semibold text-fuchsia-300 hover:text-white hover:bg-fuchsia-950/60 border border-fuchsia-800/40 transition cursor-pointer"
+                >
+                  لغو
+                </button>
+                <button
+                  type="button"
+                  onClick={handleBatchAddTasks}
+                  disabled={!batchText.trim()}
+                  className="px-3.5 py-1 rounded-lg text-xs font-extrabold bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white disabled:opacity-40 disabled:cursor-not-allowed transition flex items-center gap-1 shadow-[0_0_10px_rgba(6,182,212,0.3)] cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>ثبت همه خط‌ها</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* List */}
       <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
