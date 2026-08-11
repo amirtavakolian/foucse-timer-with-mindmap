@@ -1237,7 +1237,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
       className="fixed inset-0 z-[99999] flex flex-col bg-[#070212] text-fuchsia-100 select-none overflow-hidden font-sans"
     >
       {/* Top Cyberpunk Toolbar */}
-      <header className="h-16 px-4 sm:px-6 bg-[#0d0221]/95 border-b border-fuchsia-900/60 flex items-center justify-between gap-4 backdrop-blur-md z-20">
+      <header className="h-16 px-4 sm:px-6 bg-[#0d0221] border-b border-fuchsia-900/60 flex items-center justify-between gap-4 z-20">
         {/* Left: Title */}
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-gradient-to-r from-fuchsia-600 via-pink-600 to-purple-600 flex items-center justify-center shadow-[0_0_15px_rgba(217,70,239,0.5)]">
@@ -1418,7 +1418,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             width: '10000px',
             height: '10000px',
           }}
-          className="absolute top-0 left-0 pointer-events-none"
+          className="absolute top-0 left-0 pointer-events-none will-change-transform transform-gpu"
         >
           {/* SVG Layer for Connecting Arrow Lines */}
           <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
@@ -1631,21 +1631,21 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             const colorStyles = (() => {
               switch (node.color) {
                 case 'cyan':
-                  return { hex: '#22d3ee', bg: 'bg-[#09182d]/90', border: 'border-cyan-500/70', shadow: 'shadow-[0_0_20px_rgba(34,211,238,0.2)]', text: 'text-cyan-200', handleBg: 'bg-cyan-400 shadow-[0_0_10px_#22d3ee]' };
+                  return { hex: '#22d3ee', bg: 'bg-[#09182d]', border: 'border-cyan-500/70', shadow: 'shadow-[0_0_15px_rgba(34,211,238,0.15)]', text: 'text-cyan-200', handleBg: 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]' };
                 case 'emerald':
-                  return { hex: '#10b981', bg: 'bg-[#062419]/90', border: 'border-emerald-500/70', shadow: 'shadow-[0_0_20px_rgba(16,185,129,0.2)]', text: 'text-emerald-200', handleBg: 'bg-emerald-400 shadow-[0_0_10px_#10b981]' };
+                  return { hex: '#10b981', bg: 'bg-[#062419]', border: 'border-emerald-500/70', shadow: 'shadow-[0_0_15px_rgba(16,185,129,0.15)]', text: 'text-emerald-200', handleBg: 'bg-emerald-400 shadow-[0_0_8px_#10b981]' };
                 case 'amber':
-                  return { hex: '#f59e0b', bg: 'bg-[#291e03]/90', border: 'border-amber-500/70', shadow: 'shadow-[0_0_20px_rgba(245,158,11,0.2)]', text: 'text-amber-200', handleBg: 'bg-amber-400 shadow-[0_0_10px_#f59e0b]' };
+                  return { hex: '#f59e0b', bg: 'bg-[#291e03]', border: 'border-amber-500/70', shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.15)]', text: 'text-amber-200', handleBg: 'bg-amber-400 shadow-[0_0_8px_#f59e0b]' };
                 case 'rose':
-                  return { hex: '#f43f5e', bg: 'bg-[#280715]/90', border: 'border-rose-500/70', shadow: 'shadow-[0_0_20px_rgba(244,63,94,0.2)]', text: 'text-rose-200', handleBg: 'bg-rose-400 shadow-[0_0_10px_#f43f5e]' };
+                  return { hex: '#f43f5e', bg: 'bg-[#280715]', border: 'border-rose-500/70', shadow: 'shadow-[0_0_15px_rgba(244,63,94,0.15)]', text: 'text-rose-200', handleBg: 'bg-rose-400 shadow-[0_0_8px_#f43f5e]' };
                 case 'purple':
-                  return { hex: '#a855f7', bg: 'bg-[#150533]/90', border: 'border-purple-500/70', shadow: 'shadow-[0_0_20px_rgba(168,85,247,0.2)]', text: 'text-purple-200', handleBg: 'bg-purple-400 shadow-[0_0_10px_#c084fc]' };
+                  return { hex: '#a855f7', bg: 'bg-[#150533]', border: 'border-purple-500/70', shadow: 'shadow-[0_0_15px_rgba(168,85,247,0.15)]', text: 'text-purple-200', handleBg: 'bg-purple-400 shadow-[0_0_8px_#c084fc]' };
                 case 'yellow':
-                  return { hex: '#eab308', bg: 'bg-[#282104]/90', border: 'border-yellow-400/80', shadow: 'shadow-[0_0_20px_rgba(234,179,8,0.2)]', text: 'text-yellow-200', handleBg: 'bg-yellow-400 shadow-[0_0_10px_#facc15]' };
+                  return { hex: '#eab308', bg: 'bg-[#282104]', border: 'border-yellow-400/80', shadow: 'shadow-[0_0_15px_rgba(234,179,8,0.15)]', text: 'text-yellow-200', handleBg: 'bg-yellow-400 shadow-[0_0_8px_#facc15]' };
                 case 'white':
-                  return { hex: '#e2e8f0', bg: 'bg-[#12131f]/90', border: 'border-slate-300/80', shadow: 'shadow-[0_0_20px_rgba(255,255,255,0.2)]', text: 'text-slate-100', handleBg: 'bg-slate-200 shadow-[0_0_10px_#f1f5f9]' };
+                  return { hex: '#e2e8f0', bg: 'bg-[#12131f]', border: 'border-slate-300/80', shadow: 'shadow-[0_0_15px_rgba(255,255,255,0.15)]', text: 'text-slate-100', handleBg: 'bg-slate-200 shadow-[0_0_8px_#f1f5f9]' };
                 default:
-                  return { hex: '#d946ef', bg: 'bg-[#150533]/90', border: 'border-fuchsia-500/70', shadow: 'shadow-[0_0_20px_rgba(217,70,239,0.2)]', text: 'text-fuchsia-200', handleBg: 'bg-fuchsia-400 shadow-[0_0_10px_#d946ef]' };
+                  return { hex: '#d946ef', bg: 'bg-[#150533]', border: 'border-fuchsia-500/70', shadow: 'shadow-[0_0_15px_rgba(217,70,239,0.15)]', text: 'text-fuchsia-200', handleBg: 'bg-fuchsia-400 shadow-[0_0_8px_#d946ef]' };
               }
             })();
 
@@ -1661,7 +1661,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                   height: `${node.height}px`,
                 }}
                 onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                className={`absolute top-0 left-0 pointer-events-auto flex flex-col backdrop-blur-md transition-shadow duration-200 border group ${colorStyles.bg} ${colorStyles.border} ${colorStyles.shadow} ${
+                className={`absolute top-0 left-0 pointer-events-auto flex flex-col transition-shadow duration-200 border group ${colorStyles.bg} ${colorStyles.border} ${colorStyles.shadow} ${
                   node.shape === 'circle' ? 'rounded-[100px]' : 'rounded-2xl'
                 } ${
                   isSelected
@@ -1780,7 +1780,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                       {openFormatMenuNodeId === node.id && (
                         <div
                           onClick={(e) => e.stopPropagation()}
-                          className="absolute bottom-full mb-2 right-0 bg-[#0a021b]/95 border border-fuchsia-600/80 rounded-2xl p-3 shadow-[0_0_25px_rgba(217,70,239,0.5)] backdrop-blur-xl flex flex-col gap-2.5 min-w-[220px] z-50"
+                          className="absolute bottom-full mb-2 right-0 bg-[#0a021b] border border-fuchsia-600/80 rounded-2xl p-3 shadow-xl flex flex-col gap-2.5 min-w-[220px] z-50"
                           dir="rtl"
                         >
                           <div className="text-[10px] font-bold text-fuchsia-300/80 border-b border-fuchsia-900/50 pb-1 flex items-center justify-between">
@@ -2314,7 +2314,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
         {/* Multi-Selection Control Floating Bar */}
         {selectedNodeIds.length > 1 && (
           <div
-            className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-[#0a021b]/95 border border-cyan-500/80 rounded-2xl px-4 py-2.5 shadow-[0_0_30px_rgba(6,182,212,0.5)] backdrop-blur-md flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200 pointer-events-auto"
+            className="absolute bottom-16 left-1/2 -translate-x-1/2 bg-[#0a021b] border border-cyan-500/80 rounded-2xl px-4 py-2.5 shadow-xl flex items-center gap-3 z-50 animate-in fade-in slide-in-from-bottom-3 duration-200 pointer-events-auto"
             dir="rtl"
           >
             <div className="flex items-center gap-2 text-cyan-300 text-xs font-extrabold">
@@ -2346,7 +2346,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
         )}
 
         {/* Bottom Helper Bar */}
-        <div className="absolute bottom-4 left-4 right-4 sm:left-6 sm:right-auto bg-[#0d0221]/90 backdrop-blur-md border border-fuchsia-800/60 rounded-2xl p-3 shadow-2xl flex items-center gap-4 text-xs text-fuchsia-300 pointer-events-auto">
+        <div className="absolute bottom-4 left-4 right-4 sm:left-6 sm:right-auto bg-[#0d0221] border border-fuchsia-800/60 rounded-2xl p-3 shadow-2xl flex items-center gap-4 text-xs text-fuchsia-300 pointer-events-auto">
           <div className="flex items-center gap-2">
             <Move className="w-4 h-4 text-cyan-400" />
             <span>جابه‌جایی نودها و بوم (Drag & Pan)</span>
@@ -2366,7 +2366,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
         {/* Delete Confirmation Modal Overlay */}
         {nodeToDelete && (
           <div
-            className="fixed inset-0 bg-black/80 backdrop-blur-md z-[100] flex items-center justify-center p-4 pointer-events-auto"
+            className="fixed inset-0 bg-black/90 z-[100] flex items-center justify-center p-4 pointer-events-auto"
             onClick={() => setNodeToDelete(null)}
           >
             <div

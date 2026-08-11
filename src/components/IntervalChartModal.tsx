@@ -176,7 +176,7 @@ export const IntervalChartModal: React.FC<IntervalChartModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-3 bg-black/80 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-3 bg-black/90 animate-fade-in">
       <div className="relative w-full max-w-[98vw] h-[95vh] sm:h-[96vh] flex flex-col bg-[#0d0221] border border-fuchsia-500/60 rounded-3xl shadow-[0_0_50px_rgba(217,70,239,0.25)] text-fuchsia-100 overflow-hidden">
         
         {/* Modal Header */}

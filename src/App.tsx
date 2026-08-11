@@ -241,7 +241,7 @@ export default function App() {
       };
 
       tick();
-      timerRef.current = setInterval(tick, 250);
+      timerRef.current = setInterval(tick, 1000);
     } else {
       if (timerRef.current) clearInterval(timerRef.current);
     }
@@ -410,7 +410,7 @@ export default function App() {
       {isMinimized ? (
         /* Floating Mini Widget View when minimized */
         <div className="flex-1 flex items-center justify-center p-6">
-          <div className="p-6 rounded-2xl bg-purple-950/90 border-2 border-purple-500/80 shadow-2xl shadow-purple-900/50 backdrop-blur-2xl text-center space-y-4 max-w-sm w-full">
+          <div className="p-6 rounded-2xl bg-purple-950 border-2 border-purple-500/80 shadow-2xl text-center space-y-4 max-w-sm w-full">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-purple-300 flex items-center gap-1.5">
                 <Monitor className="w-4 h-4 text-purple-400" />
@@ -497,7 +497,7 @@ export default function App() {
       )}
 
       {/* Windows 11 Footer Status Bar */}
-      <footer className="select-none h-8 px-6 border-t border-purple-900/50 dark:border-purple-900/40 bg-purple-950/60 text-purple-300 text-[11px] font-medium flex items-center justify-between shrink-0 z-40 backdrop-blur-md">
+      <footer className="select-none h-8 px-6 border-t border-purple-900/50 dark:border-purple-900/40 bg-purple-950 text-purple-300 text-[11px] font-medium flex items-center justify-between shrink-0 z-40">
         <div className="flex items-center gap-4">
           <span className="flex items-center gap-1.5">
             <span

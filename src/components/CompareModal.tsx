@@ -414,7 +414,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
   const handleSelectRecent = (count: number) => setSelectedDates(dateList.slice(0, count));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 bg-black/95 backdrop-blur-md animate-fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 bg-black/95 animate-fade-in">
       {/* Full screen / full frame modal box */}
       <div className="relative w-full h-full flex flex-col bg-[#0d0221] border-0 text-fuchsia-100 overflow-hidden">
         
@@ -569,7 +569,7 @@ export const CompareModal: React.FC<CompareModalProps> = ({
         </div>
 
         {/* STICKY BOTTOM TOOLBAR FOR EASY SWITCHING WITHOUT SCROLLING */}
-        <div className="shrink-0 border-t border-fuchsia-800/80 bg-[#12042b]/95 backdrop-blur-md px-3 py-2.5 sm:px-6 sm:py-3 flex flex-wrap items-center justify-between gap-3 shadow-[0_-10px_25px_rgba(0,0,0,0.6)] z-30 dir-rtl">
+        <div className="shrink-0 border-t border-fuchsia-800/80 bg-[#12042b] px-3 py-2.5 sm:px-6 sm:py-3 flex flex-wrap items-center justify-between gap-3 shadow-[0_-10px_25px_rgba(0,0,0,0.6)] z-30 dir-rtl">
           {/* Chart Type Tabs Bar */}
           <div className="flex items-center gap-1.5 p-1 rounded-xl bg-[#0d0221] border border-fuchsia-800/80 text-xs font-bold overflow-x-auto max-w-full">
             <button

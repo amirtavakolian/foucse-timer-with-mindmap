@@ -19,7 +19,7 @@ interface TimerDisplayProps {
   onResetTimer: () => void;
 }
 
-export const TimerDisplay: React.FC<TimerDisplayProps> = ({
+export const TimerDisplay: React.FC<TimerDisplayProps> = React.memo(({
   settings,
   status,
   targetSeconds,
@@ -72,7 +72,7 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
   const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
 
   return (
-    <div className="flex flex-col items-center justify-between w-full h-full p-6 sm:p-8 rounded-3xl bg-[#0d0221]/90 border border-fuchsia-500/40 shadow-[0_0_35px_rgba(217,70,239,0.18)] backdrop-blur-xl transition-all">
+    <div className="flex flex-col items-center justify-between w-full h-full p-6 sm:p-8 rounded-3xl bg-[#0d0221] border border-fuchsia-500/40 shadow-[0_0_25px_rgba(217,70,239,0.12)] transition-all">
       {/* Header Task Input */}
       <div className="w-full mb-6">
         <label className="block text-xs font-bold tracking-wider text-fuchsia-300 uppercase mb-1.5 text-left">
@@ -93,7 +93,7 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
 
       {/* Main Circular Countdown Display */}
       <div className="relative flex items-center justify-center my-2 select-none">
-        <svg height={radius * 2} width={radius * 2} className="transform -rotate-90 drop-shadow-[0_0_30px_rgba(217,70,239,0.35)]">
+        <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">
           {/* Background circle track */}
           <circle
             stroke="currentColor"
@@ -333,4 +333,4 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = ({
       </div>
     </div>
   );
-};
+});

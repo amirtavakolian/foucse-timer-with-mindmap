@@ -18,7 +18,7 @@ interface Timeline24hProps {
   clearedDates?: string[];
 }
 
-export const Timeline24h: React.FC<Timeline24hProps> = ({
+export const Timeline24h: React.FC<Timeline24hProps> = React.memo(({
   settings,
   selectedDateStr,
   onChangeDateStr,
@@ -149,7 +149,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
   };
 
   return (
-    <div className="w-full p-6 sm:p-8 rounded-3xl bg-[#0d0221]/90 border border-fuchsia-500/40 shadow-[0_0_35px_rgba(217,70,239,0.18)] backdrop-blur-xl">
+    <div className="w-full p-6 sm:p-8 rounded-3xl bg-[#0d0221] border border-fuchsia-500/40 shadow-[0_0_25px_rgba(217,70,239,0.12)]">
       {/* Header & Date Navigation */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-6 border-b border-fuchsia-900/50">
         <div>
@@ -544,7 +544,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
 
       {/* Clear Day Confirmation Modal */}
       {confirmClearDay && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
           <div className="bg-[#120326] border border-rose-600/50 text-fuchsia-100 rounded-2xl p-6 max-w-md w-full shadow-[0_0_30px_rgba(225,29,72,0.3)] animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between mb-4 pb-3 border-b border-fuchsia-900/60">
               <div className="flex items-center gap-3 text-rose-400">
@@ -594,7 +594,7 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
 
       {/* Delete Session Confirmation Modal */}
       {confirmDeleteSessionId && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
           <div className="bg-[#120326] border border-rose-600/50 text-fuchsia-100 rounded-2xl p-6 max-w-md w-full shadow-[0_0_30px_rgba(225,29,72,0.3)] animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between mb-4 pb-3 border-b border-fuchsia-900/60">
               <div className="flex items-center gap-3 text-rose-400">
@@ -640,5 +640,5 @@ export const Timeline24h: React.FC<Timeline24hProps> = ({
       )}
     </div>
   );
-};
+});
 

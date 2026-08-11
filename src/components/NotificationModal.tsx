@@ -49,7 +49,7 @@ export const NotificationModal: React.FC<NotificationModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-300">
+    <div className="fixed inset-0 z-[999999] flex items-center justify-center p-4 bg-slate-950/85 animate-in fade-in duration-300">
       {/* High priority Windows Toast Card */}
       <div className="relative w-full max-w-lg p-6 sm:p-8 rounded-3xl bg-white dark:bg-slate-900 border-2 border-blue-500 shadow-2xl text-slate-800 dark:text-slate-100 overflow-hidden transform scale-100 transition-all">
         {/* Animated background glow */}

@@ -14,7 +14,7 @@ interface DailyFocusSummarySidebarProps {
   clearedDates?: string[];
 }
 
-export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> = ({
+export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> = React.memo(({
   settings,
   sessions,
   activeSession,
@@ -97,7 +97,7 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
   return (
     <aside className="w-full h-full flex flex-col gap-6 select-none">
       {/* Main Container */}
-      <div className="p-6 sm:p-7 rounded-3xl bg-[#0d0221]/90 border border-fuchsia-500/40 shadow-[0_0_35px_rgba(217,70,239,0.18)] backdrop-blur-xl flex flex-col h-full flex-1 justify-start gap-4">
+      <div className="p-6 sm:p-7 rounded-3xl bg-[#0d0221] border border-fuchsia-500/40 shadow-[0_0_25px_rgba(217,70,239,0.12)] flex flex-col h-full flex-1 justify-start gap-4">
         {/* Header */}
         <div className="pb-5 border-b border-fuchsia-900/50">
           <div className="flex items-center justify-between">
@@ -272,7 +272,7 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
 
       {/* Confirmation Modal */}
       {confirmDeleteDate && (
-        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4">
           <div className="bg-[#120326] border border-rose-600/50 text-fuchsia-100 rounded-2xl p-6 max-w-md w-full shadow-[0_0_30px_rgba(225,29,72,0.3)] animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between mb-4 pb-3 border-b border-fuchsia-900/60">
               <div className="flex items-center gap-3 text-rose-400">
@@ -326,4 +326,4 @@ export const DailyFocusSummarySidebar: React.FC<DailyFocusSummarySidebarProps> =
       )}
     </aside>
   );
-};
+});
