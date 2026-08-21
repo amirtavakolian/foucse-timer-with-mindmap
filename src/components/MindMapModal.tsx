@@ -31,9 +31,13 @@ import {
   Bold,
   Italic,
   Palette,
-  ListPlus
+  ListPlus,
+  Calendar,
+  CalendarDays,
+  Table
 } from 'lucide-react';
 import { toPersianDigits } from '../utils/time';
+import { MindMapTable, MindMapTableData, createInitialTableData } from './MindMapTable';
 
 export interface MindMapTodo {
   id: string;
@@ -48,10 +52,11 @@ export interface MindMapNode {
   width: number;
   height: number;
   title: string;
-  shape: 'rectangle' | 'square' | 'rounded' | 'header' | 'label' | 'note';
+  shape: 'rectangle' | 'square' | 'rounded' | 'header' | 'label' | 'note' | 'circle' | 'calendar';
   color: 'cyan' | 'fuchsia' | 'emerald' | 'amber' | 'purple' | 'rose' | 'yellow' | 'white';
   todos: MindMapTodo[];
   notes?: string;
+  tableData?: MindMapTableData;
   isLocked?: boolean;
   fontSize?: number | 'sm' | 'base' | 'lg' | 'xl' | '2xl';
   titleFontSize?: number;
@@ -329,6 +334,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
               contentFontSize: node.contentFontSize,
               isBold: node.isBold,
               isItalic: node.isItalic,
+              tableData: node.tableData ? JSON.parse(JSON.stringify(node.tableData)) : undefined,
             });
           }
         }
@@ -359,6 +365,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             contentFontSize: copiedNodeTemplate.contentFontSize,
             isBold: copiedNodeTemplate.isBold,
             isItalic: copiedNodeTemplate.isItalic,
+            tableData: copiedNodeTemplate.tableData ? JSON.parse(JSON.stringify(copiedNodeTemplate.tableData)) : undefined,
           };
           
           setNodes(prev => [...prev, newNode]);
@@ -813,6 +820,12 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     );
   };
 
+  const handleUpdateTableData = (nodeId: string, tableData: MindMapTableData) => {
+    setNodes((prev) =>
+      prev.map((n) => (n.id === nodeId ? { ...n, tableData } : n))
+    );
+  };
+
   // Add Node
   const handleAddNode = (shape: MindMapNode['shape'] = 'rectangle', color: MindMapNode['color'] = 'fuchsia') => {
     // Position exactly in the center of current visible canvas viewport
@@ -850,6 +863,13 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
       defaultColor = 'amber';
       defaultFontSize = 'sm';
       defaultIsBold = false;
+    } else if (shape === 'calendar') {
+      nodeWidth = 540;
+      nodeHeight = 350;
+      defaultTitle = 'تقویم و برنامه‌ریزی اکسل';
+      defaultColor = 'purple';
+      defaultFontSize = 'sm';
+      defaultIsBold = true;
     }
 
     const canvasCenterX = (viewWidth / 2 - pan.x) / zoom;
@@ -871,7 +891,8 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
       fontSize: defaultFontSize,
       isBold: defaultIsBold,
       isItalic: false,
-      todos: shape === 'label' || shape === 'note' ? [] : [
+      tableData: shape === 'calendar' ? createInitialTableData() : undefined,
+      todos: shape === 'label' || shape === 'note' || shape === 'calendar' ? [] : [
         { id: `t_${Date.now()}_1`, text: 'اولین آیتم لیست کارها', completed: false },
       ],
     };
@@ -1284,6 +1305,16 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
           >
             <StickyNote className="w-3.5 h-3.5 text-amber-400" />
             <span>+ یادداشت</span>
+          </button>
+
+          {/* Add Calendar / Excel Table Button */}
+          <button
+            onClick={() => handleAddNode('calendar', 'purple')}
+            className="px-3 py-1.5 rounded-xl bg-purple-950/80 hover:bg-purple-900 border border-purple-600/70 text-purple-200 text-xs font-bold transition flex items-center gap-1.5 shadow-[0_0_10px_rgba(168,85,247,0.25)] shrink-0"
+            title="افزودن جدول تقویم / اکسل (Calendar Excel Grid)"
+          >
+            <CalendarDays className="w-3.5 h-3.5 text-purple-400" />
+            <span>+ تقویم</span>
           </button>
 
           {/* Add Rectangle */}
@@ -1742,6 +1773,21 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                         <StickyNote className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                         یادداشت
                       </span>
+                    ) : node.shape === 'calendar' ? (
+                      <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                        <Calendar className="w-3.5 h-3.5 text-purple-400 shrink-0" />
+                        <input
+                          type="text"
+                          dir="rtl"
+                          value={node.title}
+                          onChange={(e) => handleUpdateTitle(node.id, e.target.value)}
+                          style={{ fontSize: `${titleFontPx}px` }}
+                          className={`bg-transparent outline-none flex-1 min-w-0 border-b border-transparent focus:border-purple-400 transition text-right font-bold ${
+                            node.isBold ? 'font-bold' : 'font-normal'
+                          } ${node.isItalic ? 'italic' : ''} ${colorStyles.text}`}
+                          placeholder="عنوان تقویم / جدول..."
+                        />
+                      </div>
                     ) : (
                       <input
                         type="text"
@@ -2023,6 +2069,15 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                       className={`w-full flex-1 bg-transparent outline-none resize-none text-right transition ${
                         node.isBold ? 'font-bold' : 'font-normal'
                       } ${node.isItalic ? 'italic' : ''} ${colorStyles.text}`}
+                    />
+                  </div>
+                ) : node.shape === 'calendar' ? (
+                  <div className="flex-1 flex flex-col h-full overflow-hidden min-h-0">
+                    <MindMapTable
+                      nodeId={node.id}
+                      data={node.tableData}
+                      onChangeData={(tableData) => handleUpdateTableData(node.id, tableData)}
+                      isNodeLocked={node.isLocked}
                     />
                   </div>
                 ) : (
@@ -2379,7 +2434,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                 <h3 className="text-sm font-extrabold text-fuchsia-100">تایید حذف</h3>
               </div>
               <p className="text-xs font-semibold text-fuchsia-200/90 leading-relaxed">
-                آیا از حذف این {nodeToDelete.shape === 'label' ? 'لیبل' : nodeToDelete.shape === 'note' ? 'یادداشت' : 'نود'} اطمینان دارید؟
+                آیا از حذف این {nodeToDelete.shape === 'label' ? 'لیبل' : nodeToDelete.shape === 'note' ? 'یادداشت' : nodeToDelete.shape === 'calendar' ? 'تقویم اکسل' : 'نود'} اطمینان دارید؟
               </p>
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button

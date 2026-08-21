@@ -490,7 +490,6 @@ export default function App() {
               onUpdateTasks={handleUpdateTasks}
               activeTaskName={activeTaskName}
               onSelectTaskForTimer={(taskTitle) => setActiveTaskName(taskTitle)}
-              isFa={false}
             />
           </section>
         </main>
