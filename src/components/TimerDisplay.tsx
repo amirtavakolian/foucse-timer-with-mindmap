@@ -127,14 +127,14 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = React.memo(({
 
         {/* Center Digital Timer Text */}
         <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
-          <span className="text-4xl md:text-5xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-fuchsia-200 to-pink-300 drop-shadow-[0_0_10px_rgba(217,70,239,0.5)]">
+          <span className="text-4xl md:text-5xl font-black font-mono tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-cyan-300 via-fuchsia-200 to-pink-300">
             {formatTime(remainingSeconds, false)}
           </span>
 
           <span className="mt-1.5 text-xs font-semibold text-fuchsia-300 flex items-center gap-1.5">
             {status === 'running' && (
               <>
-                <span className="w-2 h-2 rounded-full bg-cyan-400 animate-ping inline-block shadow-[0_0_8px_#22d3ee]"></span>
+                <span className="w-2 h-2 rounded-full bg-cyan-400 inline-block shadow-[0_0_6px_#22d3ee]"></span>
                 <span className="text-cyan-300 font-bold">Counting Down...</span>
               </>
             )}

@@ -89,7 +89,7 @@ export const createInitialTableData = (): MindMapTableData => {
   };
 };
 
-export const MindMapTable: React.FC<MindMapTableProps> = ({
+export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
   nodeId,
   data,
   onChangeData,
@@ -895,4 +895,4 @@ export const MindMapTable: React.FC<MindMapTableProps> = ({
       </div>
     </div>
   );
-};
+});

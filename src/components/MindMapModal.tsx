@@ -210,6 +210,13 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   // Connection Creation State
   const [connectingFromId, setConnectingFromId] = useState<string | null>(null);
   const [mouseCanvasPos, setMouseCanvasPos] = useState({ x: 0, y: 0 });
+  const rafRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
+  }, []);
 
   // Selected Nodes for multi-selection, group drag, or quick actions
   const [selectedNodeIds, setSelectedNodeIds] = useState<string[]>([]);
@@ -502,170 +509,196 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     }
   };
 
-  // Global Mouse Move
+  // Global Mouse Move (rAF throttled & idle guarded to minimize GPU/CPU overhead)
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
-      const coords = getCanvasCoords(e.clientX, e.clientY);
-      setMouseCanvasPos(coords);
+      const clientX = e.clientX;
+      const clientY = e.clientY;
 
       if (rightClickStartScreen) {
-        const dist = Math.hypot(e.clientX - rightClickStartScreen.x, e.clientY - rightClickStartScreen.y);
+        const dist = Math.hypot(clientX - rightClickStartScreen.x, clientY - rightClickStartScreen.y);
         if (dist > 4) {
           setIsRightClickDragging(true);
         }
       }
 
       if (leftClickStartScreen) {
-        const dist = Math.hypot(e.clientX - leftClickStartScreen.x, e.clientY - leftClickStartScreen.y);
+        const dist = Math.hypot(clientX - leftClickStartScreen.x, clientY - leftClickStartScreen.y);
         if (dist > 4) {
           setIsLeftClickDragging(true);
         }
       }
 
-      // 1. Selection Box Dragging
-      if (selectionBox) {
-        setSelectionBox((prev) => (prev ? { ...prev, currentCanvas: coords } : null));
+      // If no interactive action (connecting, dragging, resizing, panning, box selecting) is active, do nothing!
+      const isInteracting =
+        connectingFromId !== null ||
+        selectionBox !== null ||
+        isGroupDragging ||
+        draggingNodeId !== null ||
+        isPanning ||
+        draggingConnectionId !== null ||
+        resizingState !== null;
 
-        const minX = Math.min(selectionBox.startCanvas.x, coords.x);
-        const maxX = Math.max(selectionBox.startCanvas.x, coords.x);
-        const minY = Math.min(selectionBox.startCanvas.y, coords.y);
-        const maxY = Math.max(selectionBox.startCanvas.y, coords.y);
+      if (!isInteracting) return;
 
-        const newlySelected = nodes
-          .filter((n) => {
-            if (hiddenNodes.has(n.id)) return false;
-            const nodeMinX = n.x;
-            const nodeMaxX = n.x + n.width;
-            const nodeMinY = n.y;
-            const nodeMaxY = n.y + n.height;
-            return nodeMinX <= maxX && nodeMaxX >= minX && nodeMinY <= maxY && nodeMaxY >= minY;
-          })
-          .map((n) => n.id);
-
-        setSelectedNodeIds(newlySelected);
-        return;
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
       }
 
-      // 2. Group Dragging (Moving selected nodes together)
-      if (isGroupDragging) {
-        const dxScreen = e.clientX - groupDragStartMouse.x;
-        const dyScreen = e.clientY - groupDragStartMouse.y;
-        const dxCanvas = dxScreen / zoom;
-        const dyCanvas = dyScreen / zoom;
+      rafRef.current = requestAnimationFrame(() => {
+        const coords = getCanvasCoords(clientX, clientY);
 
-        setNodes((prev) =>
-          prev.map((n) => {
-            if (groupDragInitialPositions[n.id] !== undefined) {
-              const init = groupDragInitialPositions[n.id];
+        // 0. Live Connection Line Drawing
+        if (connectingFromId) {
+          setMouseCanvasPos(coords);
+        }
+
+        // 1. Selection Box Dragging
+        if (selectionBox) {
+          setSelectionBox((prev) => (prev ? { ...prev, currentCanvas: coords } : null));
+
+          const minX = Math.min(selectionBox.startCanvas.x, coords.x);
+          const maxX = Math.max(selectionBox.startCanvas.x, coords.x);
+          const minY = Math.min(selectionBox.startCanvas.y, coords.y);
+          const maxY = Math.max(selectionBox.startCanvas.y, coords.y);
+
+          const newlySelected = nodes
+            .filter((n) => {
+              if (hiddenNodes.has(n.id)) return false;
+              const nodeMinX = n.x;
+              const nodeMaxX = n.x + n.width;
+              const nodeMinY = n.y;
+              const nodeMaxY = n.y + n.height;
+              return nodeMinX <= maxX && nodeMaxX >= minX && nodeMinY <= maxY && nodeMaxY >= minY;
+            })
+            .map((n) => n.id);
+
+          setSelectedNodeIds(newlySelected);
+          return;
+        }
+
+        // 2. Group Dragging (Moving selected nodes together)
+        if (isGroupDragging) {
+          const dxScreen = clientX - groupDragStartMouse.x;
+          const dyScreen = clientY - groupDragStartMouse.y;
+          const dxCanvas = dxScreen / zoom;
+          const dyCanvas = dyScreen / zoom;
+
+          setNodes((prev) =>
+            prev.map((n) => {
+              if (groupDragInitialPositions[n.id] !== undefined) {
+                const init = groupDragInitialPositions[n.id];
+                return {
+                  ...n,
+                  x: init.x + dxCanvas,
+                  y: init.y + dyCanvas,
+                };
+              }
+              return n;
+            })
+          );
+          return;
+        }
+
+        // 3. Single Node Dragging
+        if (draggingNodeId) {
+          setNodes((prev) =>
+            prev.map((n) => {
+              if (n.id === draggingNodeId) {
+                return {
+                  ...n,
+                  x: coords.x - dragOffset.x,
+                  y: coords.y - dragOffset.y,
+                };
+              }
+              return n;
+            })
+          );
+          return;
+        }
+
+        // 4. Canvas Panning
+        if (isPanning) {
+          setPan({
+            x: clientX - startPanMouse.x,
+            y: clientY - startPanMouse.y,
+          });
+          return;
+        }
+
+        // 5. Connection curve dragging
+        if (draggingConnectionId && connectionDragStart && initialCurveOffset) {
+          const dx = (clientX - connectionDragStart.x) / zoom;
+          const dy = (clientY - connectionDragStart.y) / zoom;
+
+          setConnections((prev) =>
+            prev.map((c) =>
+              c.id === draggingConnectionId
+                ? {
+                    ...c,
+                    curveOffset: {
+                      x: initialCurveOffset.x + dx,
+                      y: initialCurveOffset.y + dy,
+                    },
+                  }
+                : c
+            )
+          );
+          return;
+        }
+
+        // 6. Resizing Node
+        if (resizingState) {
+          const dx = (clientX - resizingState.startMouseX) / zoom;
+          const dy = (clientY - resizingState.startMouseY) / zoom;
+
+          setNodes((prev) =>
+            prev.map((n) => {
+              if (n.id !== resizingState.nodeId) return n;
+
+              let newWidth = resizingState.startWidth;
+              let newHeight = resizingState.startHeight;
+              let newX = resizingState.startX;
+              let newY = resizingState.startY;
+
+              const side = resizingState.side;
+
+              // Right edge (Width)
+              if (side === 'e' || side === 'se' || side === 'ne') {
+                newWidth = Math.max(120, resizingState.startWidth + dx);
+              }
+              // Left edge (Width + X position)
+              if (side === 'w' || side === 'sw' || side === 'nw') {
+                newWidth = Math.max(120, resizingState.startWidth - dx);
+                newX = resizingState.startX + (resizingState.startWidth - newWidth);
+              }
+              // Bottom edge (Height)
+              if (side === 's' || side === 'se' || side === 'sw') {
+                newHeight = Math.max(75, resizingState.startHeight + dy);
+              }
+              // Top edge (Height + Y position)
+              if (side === 'n' || side === 'ne' || side === 'nw') {
+                newHeight = Math.max(75, resizingState.startHeight - dy);
+                newY = resizingState.startY + (resizingState.startHeight - newHeight);
+              }
+
               return {
                 ...n,
-                x: init.x + dxCanvas,
-                y: init.y + dyCanvas,
+                x: newX,
+                y: newY,
+                width: newWidth,
+                height: newHeight,
               };
-            }
-            return n;
-          })
-        );
-        return;
-      }
-
-      // 3. Single Node Dragging
-      if (draggingNodeId) {
-        setNodes((prev) =>
-          prev.map((n) => {
-            if (n.id === draggingNodeId) {
-              return {
-                ...n,
-                x: coords.x - dragOffset.x,
-                y: coords.y - dragOffset.y,
-              };
-            }
-            return n;
-          })
-        );
-        return;
-      }
-
-      // 4. Canvas Panning
-      if (isPanning) {
-        setPan({
-          x: e.clientX - startPanMouse.x,
-          y: e.clientY - startPanMouse.y,
-        });
-        return;
-      }
-
-      // 5. Connection curve dragging
-      if (draggingConnectionId && connectionDragStart && initialCurveOffset) {
-        const dx = (e.clientX - connectionDragStart.x) / zoom;
-        const dy = (e.clientY - connectionDragStart.y) / zoom;
-
-        setConnections((prev) =>
-          prev.map((c) =>
-            c.id === draggingConnectionId
-              ? {
-                  ...c,
-                  curveOffset: {
-                    x: initialCurveOffset.x + dx,
-                    y: initialCurveOffset.y + dy,
-                  },
-                }
-              : c
-          )
-        );
-        return;
-      }
-
-      // 6. Resizing Node
-      if (resizingState) {
-        const dx = (e.clientX - resizingState.startMouseX) / zoom;
-        const dy = (e.clientY - resizingState.startMouseY) / zoom;
-
-        setNodes((prev) =>
-          prev.map((n) => {
-            if (n.id !== resizingState.nodeId) return n;
-
-            let newWidth = resizingState.startWidth;
-            let newHeight = resizingState.startHeight;
-            let newX = resizingState.startX;
-            let newY = resizingState.startY;
-
-            const side = resizingState.side;
-
-            // Right edge (Width)
-            if (side === 'e' || side === 'se' || side === 'ne') {
-              newWidth = Math.max(120, resizingState.startWidth + dx);
-            }
-            // Left edge (Width + X position)
-            if (side === 'w' || side === 'sw' || side === 'nw') {
-              newWidth = Math.max(120, resizingState.startWidth - dx);
-              newX = resizingState.startX + (resizingState.startWidth - newWidth);
-            }
-            // Bottom edge (Height)
-            if (side === 's' || side === 'se' || side === 'sw') {
-              newHeight = Math.max(75, resizingState.startHeight + dy);
-            }
-            // Top edge (Height + Y position)
-            if (side === 'n' || side === 'ne' || side === 'nw') {
-              newHeight = Math.max(75, resizingState.startHeight - dy);
-              newY = resizingState.startY + (resizingState.startHeight - newHeight);
-            }
-
-            return {
-              ...n,
-              x: newX,
-              y: newY,
-              width: newWidth,
-              height: newHeight,
-            };
-          })
-        );
-      }
+            })
+          );
+        }
+      });
     },
     [
       getCanvasCoords,
       rightClickStartScreen,
       leftClickStartScreen,
+      connectingFromId,
       selectionBox,
       isGroupDragging,
       groupDragStartMouse,
@@ -686,6 +719,10 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   // Global Mouse Up
   const handleMouseUp = () => {
+    if (rafRef.current) {
+      cancelAnimationFrame(rafRef.current);
+    }
+
     // If clicked or right clicked without dragging -> Deselect all nodes
     if (
       (rightClickStartScreen && !isRightClickDragging) ||
@@ -1440,19 +1477,27 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
         onContextMenu={(e) => e.preventDefault()}
         className="flex-1 relative overflow-hidden cursor-grab active:cursor-grabbing bg-black"
       >
-        {/* Infinite Transformed World Layer */}
+        {/* Infinite Transformed World Layer - Zero size unbounded container for zero GPU texture allocation */}
         <div
           data-canvas-bg="true"
           style={{
-            transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+            transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})`,
             transformOrigin: '0 0',
-            width: '10000px',
-            height: '10000px',
           }}
-          className="absolute top-0 left-0 pointer-events-none will-change-transform transform-gpu"
+          className="absolute top-0 left-0 w-0 h-0 overflow-visible pointer-events-none"
         >
           {/* SVG Layer for Connecting Arrow Lines */}
-          <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
+          <svg
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              width: '1px',
+              height: '1px',
+              overflow: 'visible',
+            }}
+            className="pointer-events-none"
+          >
             <defs>
               <marker
                 id="arrowhead-fuchsia"
@@ -1522,7 +1567,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                       setInitialCurveOffset(conn.curveOffset || { x: 0, y: 0 });
                     }}
                   />
-                  {/* Visible Glow Path */}
+                  {/* Visible Path */}
                   <path
                     d={pathData}
                     fill="none"
@@ -1530,7 +1575,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     strokeWidth="3"
                     strokeDasharray="6 4"
                     markerEnd={isCollapsed ? undefined : "url(#arrowhead-fuchsia)"}
-                    className={`transition-all duration-300 drop-shadow-[0_0_8px_rgba(217,70,239,0.6)] ${isCollapsed ? 'opacity-50' : 'group-hover:stroke-cyan-400 group-hover:stroke-width-4'}`}
+                    className={`transition-colors duration-150 ${isCollapsed ? 'opacity-40' : 'group-hover:stroke-cyan-400 group-hover:stroke-width-4'}`}
                   />
                   
                   {/* Delete connection badge on hover */}
@@ -1570,7 +1615,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                       fill="#150533"
                       stroke="#06b6d4"
                       strokeWidth="1.5"
-                      className="cursor-pointer shadow-[0_0_8px_rgba(6,182,212,0.6)]"
+                      className="cursor-pointer"
                       onClick={(e) => {
                         e.stopPropagation();
                         if (isCollapsed) {
@@ -1622,10 +1667,9 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     strokeWidth="3.5"
                     strokeDasharray="6 4"
                     markerEnd="url(#arrowhead-fuchsia)"
-                    className="drop-shadow-[0_0_12px_rgba(245,158,11,0.9)]"
                   />
                   <circle cx={c1.x} cy={c1.y} r="6" fill="#f59e0b" />
-                  <circle cx={p2.x} cy={p2.y} r="7" fill="#f59e0b" className="animate-ping opacity-75" />
+                  <circle cx={p2.x} cy={p2.y} r="7" fill="#f59e0b" opacity="0.85" />
                 </g>
               );
             })()}
@@ -1647,7 +1691,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                   width: `${w}px`,
                   height: `${h}px`,
                 }}
-                className="absolute top-0 left-0 border-2 border-cyan-400 bg-cyan-500/20 rounded-xl pointer-events-none z-40 shadow-[0_0_20px_rgba(34,211,238,0.4)] border-dashed"
+                className="absolute top-0 left-0 border-2 border-cyan-400 bg-cyan-500/20 rounded-xl pointer-events-none z-40 border-dashed"
               />
             );
           })()}
@@ -1662,21 +1706,21 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
             const colorStyles = (() => {
               switch (node.color) {
                 case 'cyan':
-                  return { hex: '#22d3ee', bg: 'bg-[#09182d]', border: 'border-cyan-500/70', shadow: 'shadow-[0_0_15px_rgba(34,211,238,0.15)]', text: 'text-cyan-200', handleBg: 'bg-cyan-400 shadow-[0_0_8px_#22d3ee]' };
+                  return { hex: '#22d3ee', bg: 'bg-[#09182d]', border: 'border-cyan-500/70', shadow: 'shadow-[0_0_12px_rgba(34,211,238,0.1)]', text: 'text-cyan-200', handleBg: 'bg-cyan-400' };
                 case 'emerald':
-                  return { hex: '#10b981', bg: 'bg-[#062419]', border: 'border-emerald-500/70', shadow: 'shadow-[0_0_15px_rgba(16,185,129,0.15)]', text: 'text-emerald-200', handleBg: 'bg-emerald-400 shadow-[0_0_8px_#10b981]' };
+                  return { hex: '#10b981', bg: 'bg-[#062419]', border: 'border-emerald-500/70', shadow: 'shadow-[0_0_12px_rgba(16,185,129,0.1)]', text: 'text-emerald-200', handleBg: 'bg-emerald-400' };
                 case 'amber':
-                  return { hex: '#f59e0b', bg: 'bg-[#291e03]', border: 'border-amber-500/70', shadow: 'shadow-[0_0_15px_rgba(245,158,11,0.15)]', text: 'text-amber-200', handleBg: 'bg-amber-400 shadow-[0_0_8px_#f59e0b]' };
+                  return { hex: '#f59e0b', bg: 'bg-[#291e03]', border: 'border-amber-500/70', shadow: 'shadow-[0_0_12px_rgba(245,158,11,0.1)]', text: 'text-amber-200', handleBg: 'bg-amber-400' };
                 case 'rose':
-                  return { hex: '#f43f5e', bg: 'bg-[#280715]', border: 'border-rose-500/70', shadow: 'shadow-[0_0_15px_rgba(244,63,94,0.15)]', text: 'text-rose-200', handleBg: 'bg-rose-400 shadow-[0_0_8px_#f43f5e]' };
+                  return { hex: '#f43f5e', bg: 'bg-[#280715]', border: 'border-rose-500/70', shadow: 'shadow-[0_0_12px_rgba(244,63,94,0.1)]', text: 'text-rose-200', handleBg: 'bg-rose-400' };
                 case 'purple':
-                  return { hex: '#a855f7', bg: 'bg-[#150533]', border: 'border-purple-500/70', shadow: 'shadow-[0_0_15px_rgba(168,85,247,0.15)]', text: 'text-purple-200', handleBg: 'bg-purple-400 shadow-[0_0_8px_#c084fc]' };
+                  return { hex: '#a855f7', bg: 'bg-[#150533]', border: 'border-purple-500/70', shadow: 'shadow-[0_0_12px_rgba(168,85,247,0.1)]', text: 'text-purple-200', handleBg: 'bg-purple-400' };
                 case 'yellow':
-                  return { hex: '#eab308', bg: 'bg-[#282104]', border: 'border-yellow-400/80', shadow: 'shadow-[0_0_15px_rgba(234,179,8,0.15)]', text: 'text-yellow-200', handleBg: 'bg-yellow-400 shadow-[0_0_8px_#facc15]' };
+                  return { hex: '#eab308', bg: 'bg-[#282104]', border: 'border-yellow-400/80', shadow: 'shadow-[0_0_12px_rgba(234,179,8,0.1)]', text: 'text-yellow-200', handleBg: 'bg-yellow-400' };
                 case 'white':
-                  return { hex: '#e2e8f0', bg: 'bg-[#12131f]', border: 'border-slate-300/80', shadow: 'shadow-[0_0_15px_rgba(255,255,255,0.15)]', text: 'text-slate-100', handleBg: 'bg-slate-200 shadow-[0_0_8px_#f1f5f9]' };
+                  return { hex: '#e2e8f0', bg: 'bg-[#12131f]', border: 'border-slate-300/80', shadow: 'shadow-[0_0_12px_rgba(255,255,255,0.1)]', text: 'text-slate-100', handleBg: 'bg-slate-200' };
                 default:
-                  return { hex: '#d946ef', bg: 'bg-[#150533]', border: 'border-fuchsia-500/70', shadow: 'shadow-[0_0_15px_rgba(217,70,239,0.15)]', text: 'text-fuchsia-200', handleBg: 'bg-fuchsia-400 shadow-[0_0_8px_#d946ef]' };
+                  return { hex: '#d946ef', bg: 'bg-[#150533]', border: 'border-fuchsia-500/70', shadow: 'shadow-[0_0_12px_rgba(217,70,239,0.1)]', text: 'text-fuchsia-200', handleBg: 'bg-fuchsia-400' };
               }
             })();
 
@@ -1692,13 +1736,13 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                   height: `${node.height}px`,
                 }}
                 onMouseDown={(e) => handleNodeMouseDown(node, e)}
-                className={`absolute top-0 left-0 pointer-events-auto flex flex-col transition-shadow duration-200 border group ${colorStyles.bg} ${colorStyles.border} ${colorStyles.shadow} ${
+                className={`absolute top-0 left-0 pointer-events-auto flex flex-col border group ${colorStyles.bg} ${colorStyles.border} ${colorStyles.shadow} ${
                   node.shape === 'circle' ? 'rounded-[100px]' : 'rounded-2xl'
                 } ${
                   isSelected
-                    ? 'ring-2 ring-cyan-300 ring-offset-2 ring-offset-[#090314] shadow-[0_0_30px_rgba(6,182,212,0.5)] z-10'
+                    ? 'ring-2 ring-cyan-300 ring-offset-1 ring-offset-[#090314] z-10'
                     : ''
-                } ${isConnecting ? 'ring-2 ring-amber-400 animate-pulse' : ''}`}
+                } ${isConnecting ? 'ring-2 ring-amber-400' : ''}`}
               >
                 {/* 4 Edge Resizing Handles */}
                 <div

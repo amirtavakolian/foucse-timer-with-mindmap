@@ -380,9 +380,9 @@ export default function App() {
           : 'bg-[#090314] text-fuchsia-100 selection:bg-fuchsia-500 selection:text-white'
       } dir-ltr`}
     >
-      {/* Background Cyberpunk Ambient Glows */}
-      <div className="fixed top-0 left-1/4 w-96 h-96 bg-fuchsia-600/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
-      <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-cyan-600/10 rounded-full blur-[120px] pointer-events-none -z-10"></div>
+      {/* Background Cyberpunk Ambient Glows (Optimized with radial gradients to avoid heavy GPU blur passes) */}
+      <div className="fixed top-0 left-1/4 w-96 h-96 bg-[radial-gradient(circle,_rgba(217,70,239,0.12)_0%,_transparent_70%)] pointer-events-none -z-10" />
+      <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-[radial-gradient(circle,_rgba(6,182,212,0.12)_0%,_transparent_70%)] pointer-events-none -z-10" />
 
       {/* Windows 11 Title Bar Container */}
       <WindowsTitleBar
