@@ -330,6 +330,7 @@ export interface ActiveTimerState {
   remainingSeconds: number;
   activeTaskName: string;
   endTime: number | null;
+  lastHeartbeat?: number;
   activeSession: {
     id: string;
     startTime: number;
@@ -340,7 +341,39 @@ export interface ActiveTimerState {
 export function loadActiveTimerState(): ActiveTimerState | null {
   try {
     const raw = localStorage.getItem(ACTIVE_TIMER_KEY);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const state: ActiveTimerState = JSON.parse(raw);
+      if (state && state.status === 'running') {
+        const now = Date.now();
+        const lastHeartbeat = state.lastHeartbeat || state.activeSession?.startTime || now;
+        const gap = now - lastHeartbeat;
+
+        // If more than 6 seconds elapsed since last heartbeat, the system was shut down, sleeping, or closed!
+        if (gap > 6000) {
+          // If some real work was done before shutdown, save that session cleanly
+          if (state.activeSession && state.activeSession.elapsedSeconds >= 5) {
+            const actualEnd = state.activeSession.startTime + state.activeSession.elapsedSeconds * 1000;
+            const shutdownSession: FocusSession = {
+              id: state.activeSession.id,
+              startTime: state.activeSession.startTime,
+              endTime: actualEnd,
+              durationSeconds: state.targetSeconds,
+              elapsedSeconds: state.activeSession.elapsedSeconds,
+              taskName: state.activeTaskName,
+              completed: false,
+              dateStr: getTodayDateStr(),
+            };
+            saveSession(shutdownSession);
+          }
+          // Do not count shutdown/sleep time as focus! Set timer state to paused with preserved remaining time
+          state.status = 'paused';
+          state.endTime = null;
+          state.activeSession = null;
+          saveActiveTimerState(state);
+        }
+      }
+      return state;
+    }
   } catch (e) {
     console.warn('Failed to load active timer state', e);
   }

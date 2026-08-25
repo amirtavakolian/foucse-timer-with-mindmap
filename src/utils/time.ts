@@ -155,11 +155,12 @@ export function generateDayIntervals(
   }[] = [];
 
   const allSessions = [...sessions];
-  if (activeSession && isToday) {
+  if (activeSession && isToday && activeSession.elapsedSeconds > 0) {
+    const liveEnd = activeSession.startTime + activeSession.elapsedSeconds * 1000;
     allSessions.push({
       id: 'active_live',
       startTime: activeSession.startTime,
-      endTime: nowMs,
+      endTime: liveEnd,
       durationSeconds: activeSession.elapsedSeconds,
       elapsedSeconds: activeSession.elapsedSeconds,
       completed: false,
@@ -171,7 +172,15 @@ export function generateDayIntervals(
 
   allSessions.forEach((s) => {
     const sStart = s.startTime;
-    const sEnd = s.endTime || nowMs;
+    let sEnd = s.endTime;
+
+    // Strict boundary: focus duration must never exceed actual elapsedSeconds
+    if (s.elapsedSeconds !== undefined && s.elapsedSeconds > 0) {
+      const calculatedEnd = sStart + s.elapsedSeconds * 1000;
+      sEnd = sEnd ? Math.min(sEnd, calculatedEnd) : calculatedEnd;
+    } else if (!sEnd) {
+      sEnd = sStart + (s.durationSeconds || 0) * 1000;
+    }
 
     if (sEnd <= dayStart || sStart >= capTime) return;
 
@@ -359,12 +368,12 @@ export function calculate24HourBreakdown(
   // Combine completed sessions + active session
   const allSessionsToCalculate = [...sessions];
 
-  if (activeSession && getTodayDateStr() === dateStr) {
-    const now = Date.now();
+  if (activeSession && getTodayDateStr() === dateStr && activeSession.elapsedSeconds > 0) {
+    const liveEnd = activeSession.startTime + activeSession.elapsedSeconds * 1000;
     allSessionsToCalculate.push({
       id: 'active_live',
       startTime: activeSession.startTime,
-      endTime: now,
+      endTime: liveEnd,
       durationSeconds: activeSession.elapsedSeconds,
       elapsedSeconds: activeSession.elapsedSeconds,
       completed: false,
@@ -377,7 +386,15 @@ export function calculate24HourBreakdown(
     if (session.sessionType === 'idle') return;
 
     const sStart = session.startTime;
-    const sEnd = session.endTime || Date.now();
+    let sEnd = session.endTime;
+
+    // Strict boundary: focus duration must never exceed actual elapsedSeconds
+    if (session.elapsedSeconds !== undefined && session.elapsedSeconds > 0) {
+      const calculatedEnd = sStart + session.elapsedSeconds * 1000;
+      sEnd = sEnd ? Math.min(sEnd, calculatedEnd) : calculatedEnd;
+    } else if (!sEnd) {
+      sEnd = sStart + (session.durationSeconds || 0) * 1000;
+    }
 
     // Check overlap with the target day
     if (sEnd <= dayStartTimestamp || sStart >= dayEndTimestamp) return;
