@@ -1,7 +1,21 @@
 import React, { useState, useEffect } from 'react';
-import { Play, Pause, RotateCcw, Square, Clock, Sparkles, CheckCircle2, ChevronUp, ChevronDown, Bell } from 'lucide-react';
-import { AppSettings, TimerStatus } from '../types';
-import { formatTime, toPersianDigits } from '../utils/time';
+import {
+  Play,
+  Pause,
+  RotateCcw,
+  Square,
+  Clock,
+  Sparkles,
+  CheckCircle2,
+  ChevronUp,
+  ChevronDown,
+  Bell,
+  Check,
+  Trophy,
+  Target
+} from 'lucide-react';
+import { AppSettings, TimerStatus, FocusSession } from '../types';
+import { formatTime, toPersianDigits, formatDurationHuman, getTodayDateStr } from '../utils/time';
 import { playUiClick } from '../utils/audio';
 
 interface TimerDisplayProps {
@@ -17,6 +31,13 @@ interface TimerDisplayProps {
   onResumeTimer: () => void;
   onStopAndSaveTimer: () => void;
   onResetTimer: () => void;
+  sessions?: FocusSession[];
+  activeSession?: {
+    id: string;
+    startTime: number;
+    elapsedSeconds: number;
+  } | null;
+  todayStr?: string;
 }
 
 export const TimerDisplay: React.FC<TimerDisplayProps> = React.memo(({
@@ -32,6 +53,9 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = React.memo(({
   onResumeTimer,
   onStopAndSaveTimer,
   onResetTimer,
+  sessions = [],
+  activeSession = null,
+  todayStr,
 }) => {
   // Input state for hours, minutes, seconds when idle
   const [inputHours, setInputHours] = useState<number>(Math.floor(targetSeconds / 3600));
@@ -71,26 +95,88 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = React.memo(({
   const circumference = normalizedRadius * 2 * Math.PI;
   const strokeDashoffset = circumference - (progressPercent / 100) * circumference;
 
+  // Calculate Today's Focus Path Stepper Data
+  const currentTodayKey = todayStr || getTodayDateStr();
+  const todayCompletedSessions = sessions.filter(
+    (s) => s.dateStr === currentTodayKey && s.sessionType !== 'idle' && (s.elapsedSeconds > 0 || s.durationSeconds > 0)
+  );
+
+  const completedFocusSeconds = todayCompletedSessions.reduce(
+    (acc, s) => acc + (s.elapsedSeconds || s.durationSeconds || 0),
+    0
+  );
+  const activeElapsed =
+    activeSession && (status === 'running' || status === 'paused')
+      ? Math.max(0, targetSeconds - remainingSeconds) || activeSession.elapsedSeconds
+      : 0;
+
+  const totalFocusSecondsToday = completedFocusSeconds + activeElapsed;
+  const totalFocusSessionsCount =
+    todayCompletedSessions.length + (activeSession && (status === 'running' || status === 'paused') ? 1 : 0);
+
+  // Helper to format concise label under circle nodes (e.g. "25m", "1h", "45m")
+  const formatStepLabel = (seconds: number): string => {
+    if (seconds <= 0) return '25m';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (h > 0 && m === 0) {
+      return `${h}h`;
+    }
+    if (h > 0 && m > 0) {
+      return `${h}h ${m}m`;
+    }
+    return `${m || 1}m`;
+  };
+
+  // Build the array of path steps
+  interface PathStep {
+    id: string;
+    state: 'completed' | 'active' | 'upcoming';
+    label: string;
+    seconds: number;
+  }
+
+  const pathSteps: PathStep[] = [];
+
+  // 1. Add completed sessions of today
+  todayCompletedSessions.forEach((session, idx) => {
+    const dur = session.elapsedSeconds || session.durationSeconds;
+    pathSteps.push({
+      id: session.id || `completed_${idx}`,
+      state: 'completed',
+      label: formatStepLabel(dur),
+      seconds: dur,
+    });
+  });
+
+  // 2. Add current active/running session if active
+  if (status === 'running' || status === 'paused') {
+    pathSteps.push({
+      id: 'active_session',
+      state: 'active',
+      label: formatStepLabel(targetSeconds),
+      seconds: targetSeconds,
+    });
+  }
+
+  // 3. If there are fewer than 4 items, add upcoming placeholders so the path has progression
+  const defaultPresets = [25 * 60, 45 * 60, 60 * 60, 15 * 60];
+  let upcomingIdx = pathSteps.length;
+  while (pathSteps.length < 4) {
+    const upcomingSec = defaultPresets[upcomingIdx % defaultPresets.length];
+    pathSteps.push({
+      id: `upcoming_${upcomingIdx}`,
+      state: 'upcoming',
+      label: formatStepLabel(upcomingSec),
+      seconds: upcomingSec,
+    });
+    upcomingIdx++;
+  }
+
+  const isGoalReached = totalFocusSecondsToday >= 2 * 3600 || totalFocusSessionsCount >= 4;
+
   return (
     <div className="flex flex-col items-center justify-between w-full h-full p-6 sm:p-8 rounded-3xl bg-[#0d0221] border border-fuchsia-500/40 shadow-[0_0_25px_rgba(217,70,239,0.12)] transition-all">
-      {/* Header Task Input */}
-      <div className="w-full mb-6">
-        <label className="block text-xs font-bold tracking-wider text-fuchsia-300 uppercase mb-1.5 text-left">
-          Focus Session Title
-        </label>
-        <div className="relative">
-          <input
-            type="text"
-            value={activeTaskName}
-            onChange={(e) => onChangeTaskName(e.target.value)}
-            disabled={status === 'running' || status === 'paused'}
-            placeholder="e.g. Working on project deadline..."
-            className="w-full px-4 py-3 pl-10 rounded-xl bg-[#150533]/80 border border-fuchsia-800/60 focus:border-fuchsia-400 focus:ring-2 focus:ring-fuchsia-500/30 text-fuchsia-100 placeholder-fuchsia-400/40 text-sm font-medium transition outline-none text-left disabled:opacity-75"
-          />
-          <Sparkles className="w-4 h-4 text-fuchsia-400 absolute left-3.5 top-3.5 pointer-events-none" />
-        </div>
-      </div>
-
       {/* Main Circular Countdown Display */}
       <div className="relative flex items-center justify-center my-2 select-none">
         <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">
@@ -155,6 +241,103 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = React.memo(({
               </span>
             )}
           </span>
+        </div>
+      </div>
+
+      {/* Today's Focus Stepper Path Section (Placed directly above Quick Presets) */}
+      <div className="w-full mt-4 mb-2 pt-4 border-t border-purple-900/50 flex flex-col" dir="ltr">
+        {/* Header with Title and Today's Summary Count & Total Duration */}
+        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+          <span className="text-xs sm:text-sm font-extrabold text-fuchsia-300 flex items-center gap-1.5">
+            <span>Today's Path</span>
+          </span>
+
+          <div className="flex items-center gap-2 text-xs font-semibold">
+            {totalFocusSessionsCount > 0 ? (
+              <span className="px-2.5 py-1 rounded-full bg-purple-950/80 border border-purple-800/70 text-cyan-300">
+                {totalFocusSessionsCount} {totalFocusSessionsCount === 1 ? 'session' : 'sessions'} • {formatDurationHuman(totalFocusSecondsToday, 'en')}
+              </span>
+            ) : (
+              <span className="text-purple-400/70 text-[11px]">
+                0 sessions today
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Stepper Horizontal Node Track */}
+        <div className="relative w-full py-2 px-2 flex items-center justify-between">
+          {/* Dashed Connecting Line (Behind Nodes) */}
+          <div
+            className="absolute left-6 right-6 top-[26px] -translate-y-1/2 border-t-2 border-dashed border-purple-800/80 z-0 pointer-events-none"
+          />
+
+          {/* Stepper Nodes */}
+          {pathSteps.map((step) => {
+            if (step.state === 'completed') {
+              return (
+                <div key={step.id} className="relative z-10 flex flex-col items-center group">
+                  <div
+                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-gradient-to-tr from-[#e05b93] to-pink-500 border border-pink-300 text-white flex items-center justify-center shadow-[0_0_14px_rgba(224,91,147,0.5)] transition-transform group-hover:scale-105"
+                    title={`Completed: ${step.label}`}
+                  >
+                    <Check className="w-5 h-5 text-white stroke-[3]" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-bold text-fuchsia-200 mt-1.5 whitespace-nowrap">
+                    {step.label}
+                  </span>
+                </div>
+              );
+            }
+
+            if (step.state === 'active') {
+              return (
+                <div key={step.id} className="relative z-10 flex flex-col items-center group">
+                  <div
+                    className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-[#1b0638] border-2 border-cyan-300 ring-4 ring-cyan-500/30 flex items-center justify-center shadow-[0_0_18px_rgba(34,211,238,0.7)] animate-pulse transition-transform group-hover:scale-105"
+                    title={`In progress: ${step.label}`}
+                  >
+                    <div className="w-3.5 h-3.5 rounded-full bg-cyan-300 shadow-[0_0_8px_#22d3ee]" />
+                  </div>
+                  <span className="text-[11px] sm:text-xs font-black text-cyan-300 mt-1.5 whitespace-nowrap">
+                    {step.label}
+                  </span>
+                </div>
+              );
+            }
+
+            // Upcoming / Placeholder Step
+            return (
+              <div key={step.id} className="relative z-10 flex flex-col items-center group">
+                <div
+                  className="w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-[#180730] border border-purple-800/80 text-purple-600 flex items-center justify-center transition-transform group-hover:scale-105"
+                  title={`Upcoming: ${step.label}`}
+                >
+                  <div className="w-2 h-2 rounded-full bg-purple-700/60" />
+                </div>
+                <span className="text-[11px] sm:text-xs font-medium text-purple-400/60 mt-1.5 whitespace-nowrap">
+                  {step.label}
+                </span>
+              </div>
+            );
+          })}
+
+          {/* Final Goal Node (Yellow / Trophy) */}
+          <div className="relative z-10 flex flex-col items-center group">
+            <div
+              className={`w-10 h-10 sm:w-11 sm:h-11 rounded-full border-2 border-amber-400 flex items-center justify-center transition-transform group-hover:scale-105 ${
+                isGoalReached
+                  ? 'bg-amber-500 text-slate-950 shadow-[0_0_20px_#f59e0b]'
+                  : 'bg-[#261902]/80 text-amber-300 shadow-[0_0_15px_rgba(251,191,36,0.35)]'
+              }`}
+              title="Daily Goal"
+            >
+              <Trophy className="w-5 h-5 text-amber-300 fill-amber-400/25 stroke-[2.2]" />
+            </div>
+            <span className="text-[11px] sm:text-xs font-black text-amber-300 mt-1.5 whitespace-nowrap">
+              Goal
+            </span>
+          </div>
         </div>
       </div>
 
@@ -334,3 +517,4 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = React.memo(({
     </div>
   );
 });
+

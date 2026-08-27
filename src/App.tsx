@@ -495,6 +495,9 @@ export default function App() {
                 onResumeTimer={handleResumeTimer}
                 onStopAndSaveTimer={handleStopAndSaveTimer}
                 onResetTimer={handleResetTimer}
+                sessions={sessions}
+                activeSession={activeSession}
+                todayStr={getTodayDateStr()}
               />
             </div>
 

@@ -16,7 +16,10 @@ import {
   Sparkles,
   Layers,
   Paintbrush,
-  Check
+  Check,
+  Copy,
+  Scissors,
+  ClipboardPaste
 } from 'lucide-react';
 import { toPersianDigits, formatShamsiDate } from '../utils/time';
 
@@ -38,6 +41,22 @@ export interface MindMapTableData {
   colWidths: number[];
   rowHeights: number[];
 }
+
+export interface CellClipboardPayload {
+  rows: number;
+  cols: number;
+  cells: Array<{
+    relR: number;
+    relC: number;
+    cell: MindMapTableCell;
+  }>;
+  isCut?: boolean;
+  sourceNodeId?: string;
+  sourceRange?: { minR: number; maxR: number; minC: number; maxC: number };
+}
+
+// Module-level global clipboard for copying/cutting cells between any table nodes
+let globalCellClipboard: CellClipboardPayload | null = null;
 
 interface MindMapTableProps {
   nodeId: string;
@@ -99,10 +118,37 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
     ? data
     : createInitialTableData();
 
-  const [selectedCell, setSelectedCell] = useState<{ r: number; c: number } | null>({ r: 0, c: 0 });
+  const [selectedCell, setSelectedCell] = useState<{ r: number; c: number } | null>(null);
   const [editingCell, setEditingCell] = useState<{ r: number; c: number } | null>(null);
   const [showTextColorPicker, setShowTextColorPicker] = useState(false);
   const [showBgColorPicker, setShowBgColorPicker] = useState(false);
+  const [hasClipboardData, setHasClipboardData] = useState<boolean>(() => !!globalCellClipboard);
+  const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+
+  // Clear cell selection and popovers whenever user clicks outside this table/calendar component
+  useEffect(() => {
+    const handlePointerDownOutside = (e: MouseEvent | TouchEvent) => {
+      if (tableContainerRef.current && !tableContainerRef.current.contains(e.target as Node)) {
+        setSelectedCell(null);
+        setEditingCell(null);
+        setDragStartCell(null);
+        setDragEndCell(null);
+        setIsDragSelecting(false);
+        setShowTextColorPicker(false);
+        setShowBgColorPicker(false);
+        setIsFormatPainterActive(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handlePointerDownOutside, true);
+    document.addEventListener('touchstart', handlePointerDownOutside, true);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDownOutside, true);
+      document.removeEventListener('touchstart', handlePointerDownOutside, true);
+    };
+  }, []);
 
   // Format Painter (Copy style/characteristics) state
   const [copiedFormat, setCopiedFormat] = useState<Partial<MindMapTableCell> | null>(null);
@@ -166,7 +212,7 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
     });
   }, [tableData, onChangeData]);
 
-  // Copy style of the currently selected cell
+  // Copy style of the currently selected cell (Format Painter)
   const handleCopyCellFormat = () => {
     if (!selectedCell) return;
     const current = getCell(selectedCell.r, selectedCell.c);
@@ -187,6 +233,232 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
     setIsFormatPainterActive(false);
   };
 
+  // Helper to determine current active rectangular range of selection
+  const getActiveRange = useCallback(() => {
+    if (dragStartCell && dragEndCell) {
+      return {
+        minR: Math.min(dragStartCell.r, dragEndCell.r),
+        maxR: Math.max(dragStartCell.r, dragEndCell.r),
+        minC: Math.min(dragStartCell.c, dragEndCell.c),
+        maxC: Math.max(dragStartCell.c, dragEndCell.c),
+      };
+    }
+    if (selectedCell) {
+      return {
+        minR: selectedCell.r,
+        maxR: selectedCell.r,
+        minC: selectedCell.c,
+        maxC: selectedCell.c,
+      };
+    }
+    return null;
+  }, [dragStartCell, dragEndCell, selectedCell]);
+
+  // 1. Copy Cells (Ctrl+C): Content + Full Style (Bold, Italic, Color, BgColor, FontSize, Direction)
+  const handleCopyCells = useCallback(() => {
+    const range = getActiveRange();
+    if (!range) return;
+
+    const { minR, maxR, minC, maxC } = range;
+    const copiedItems: Array<{ relR: number; relC: number; cell: MindMapTableCell }> = [];
+    const textRows: string[] = [];
+
+    for (let r = minR; r <= maxR; r++) {
+      const rowTexts: string[] = [];
+      for (let c = minC; c <= maxC; c++) {
+        const cData = getCell(r, c);
+        copiedItems.push({
+          relR: r - minR,
+          relC: c - minC,
+          cell: { ...cData },
+        });
+        rowTexts.push(cData.text || '');
+      }
+      textRows.push(rowTexts.join('\t'));
+    }
+
+    globalCellClipboard = {
+      rows: maxR - minR + 1,
+      cols: maxC - minC + 1,
+      cells: copiedItems,
+      isCut: false,
+      sourceNodeId: nodeId,
+      sourceRange: range,
+    };
+
+    setHasClipboardData(true);
+    setCopyFeedback('کپی شد (با استایل)');
+    setTimeout(() => setCopyFeedback(null), 1600);
+
+    // Also write plain text to system clipboard for external pasting
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(textRows.join('\n'));
+      }
+    } catch {
+      // Ignore fallback
+    }
+  }, [getActiveRange, getCell, nodeId]);
+
+  // 2. Cut Cells (Ctrl+X): Copy content + full style and clear the source cell values
+  const handleCutCells = useCallback(() => {
+    const range = getActiveRange();
+    if (!range) return;
+
+    const { minR, maxR, minC, maxC } = range;
+    const copiedItems: Array<{ relR: number; relC: number; cell: MindMapTableCell }> = [];
+    const textRows: string[] = [];
+    const updatedCells = { ...tableData.cells };
+
+    for (let r = minR; r <= maxR; r++) {
+      const rowTexts: string[] = [];
+      for (let c = minC; c <= maxC; c++) {
+        const cData = getCell(r, c);
+        copiedItems.push({
+          relR: r - minR,
+          relC: c - minC,
+          cell: { ...cData },
+        });
+        rowTexts.push(cData.text || '');
+
+        const key = getCellKey(r, c);
+        if (updatedCells[key]) {
+          updatedCells[key] = {
+            ...updatedCells[key],
+            text: '',
+          };
+        }
+      }
+      textRows.push(rowTexts.join('\t'));
+    }
+
+    globalCellClipboard = {
+      rows: maxR - minR + 1,
+      cols: maxC - minC + 1,
+      cells: copiedItems,
+      isCut: true,
+      sourceNodeId: nodeId,
+      sourceRange: range,
+    };
+
+    setHasClipboardData(true);
+    setCopyFeedback('کات شد');
+    setTimeout(() => setCopyFeedback(null), 1600);
+
+    onChangeData({
+      ...tableData,
+      cells: updatedCells,
+    });
+
+    try {
+      if (navigator?.clipboard?.writeText) {
+        navigator.clipboard.writeText(textRows.join('\n'));
+      }
+    } catch {
+      // Ignore
+    }
+  }, [getActiveRange, getCell, nodeId, tableData, onChangeData]);
+
+  // 3. Paste Cells (Ctrl+V): Paste content and styles into selected target cell(s)
+  const handlePasteCells = useCallback(() => {
+    if (!selectedCell) return;
+
+    const targetR = selectedCell.r;
+    const targetC = selectedCell.c;
+
+    if (globalCellClipboard && globalCellClipboard.cells.length > 0) {
+      const updatedCells = { ...tableData.cells };
+      globalCellClipboard.cells.forEach((item) => {
+        const r = targetR + item.relR;
+        const c = targetC + item.relC;
+        if (r < tableData.rows && c < tableData.cols) {
+          const key = getCellKey(r, c);
+          updatedCells[key] = {
+            ...item.cell,
+          };
+        }
+      });
+
+      if (globalCellClipboard.isCut) {
+        globalCellClipboard = {
+          ...globalCellClipboard,
+          isCut: false,
+        };
+      }
+
+      onChangeData({
+        ...tableData,
+        cells: updatedCells,
+      });
+
+      setCopyFeedback('پیست شد');
+      setTimeout(() => setCopyFeedback(null), 1600);
+      return;
+    }
+
+    // Fallback: Read text from system clipboard if global buffer is empty
+    if (navigator?.clipboard?.readText) {
+      navigator.clipboard.readText().then((text) => {
+        if (!text) return;
+        const rows = text.split(/\r?\n/);
+        const updatedCells = { ...tableData.cells };
+
+        rows.forEach((rowText, rIdx) => {
+          if (!rowText && rIdx === rows.length - 1) return;
+          const cols = rowText.split('\t');
+          cols.forEach((colText, cIdx) => {
+            const r = targetR + rIdx;
+            const c = targetC + cIdx;
+            if (r < tableData.rows && c < tableData.cols) {
+              const key = getCellKey(r, c);
+              const existing = updatedCells[key] || { text: '', dir: 'rtl', fontSize: 12 };
+              updatedCells[key] = {
+                ...existing,
+                text: colText,
+              };
+            }
+          });
+        });
+
+        onChangeData({
+          ...tableData,
+          cells: updatedCells,
+        });
+
+        setCopyFeedback('پیست شد');
+        setTimeout(() => setCopyFeedback(null), 1600);
+      }).catch(() => {
+        // Clipboard read permission error or empty
+      });
+    }
+  }, [selectedCell, tableData, onChangeData]);
+
+  // 4. Delete / Clear selected cells (Delete or Backspace)
+  const handleDeleteSelectedCells = useCallback(() => {
+    const range = getActiveRange();
+    if (!range) return;
+
+    const { minR, maxR, minC, maxC } = range;
+    const updatedCells = { ...tableData.cells };
+
+    for (let r = minR; r <= maxR; r++) {
+      for (let c = minC; c <= maxC; c++) {
+        const key = getCellKey(r, c);
+        if (updatedCells[key]) {
+          updatedCells[key] = {
+            ...updatedCells[key],
+            text: '',
+          };
+        }
+      }
+    }
+
+    onChangeData({
+      ...tableData,
+      cells: updatedCells,
+    });
+  }, [getActiveRange, tableData, onChangeData]);
+
   // Insert Persian Today Date (without year)
   const insertTodayDate = (r: number, c: number) => {
     const todayShamsi = formatShamsiDate(new Date(), { showWeekday: true, showYear: false });
@@ -197,23 +469,23 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
   const activeCellProps = selectedCell ? getCell(selectedCell.r, selectedCell.c) : null;
 
   // Toggle Formatting Helpers
-  const handleToggleBold = () => {
+  const handleToggleBold = useCallback(() => {
     if (!selectedCell) return;
     const current = getCell(selectedCell.r, selectedCell.c);
     updateCell(selectedCell.r, selectedCell.c, { isBold: !current.isBold });
-  };
+  }, [selectedCell, getCell, updateCell]);
 
-  const handleToggleItalic = () => {
+  const handleToggleItalic = useCallback(() => {
     if (!selectedCell) return;
     const current = getCell(selectedCell.r, selectedCell.c);
     updateCell(selectedCell.r, selectedCell.c, { isItalic: !current.isItalic });
-  };
+  }, [selectedCell, getCell, updateCell]);
 
-  const handleToggleUnderline = () => {
+  const handleToggleUnderline = useCallback(() => {
     if (!selectedCell) return;
     const current = getCell(selectedCell.r, selectedCell.c);
     updateCell(selectedCell.r, selectedCell.c, { isUnderline: !current.isUnderline });
-  };
+  }, [selectedCell, getCell, updateCell]);
 
   const handleToggleDir = () => {
     if (!selectedCell) return;
@@ -239,6 +511,152 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
     setShowBgColorPicker(false);
   };
 
+  // Comprehensive Keyboard Shortcuts Listener for Table Cells
+  useEffect(() => {
+    if (!selectedCell) return;
+
+    const handleTableKeyDown = (e: KeyboardEvent) => {
+      // If currently editing inside textarea, let normal text typing occur
+      if (editingCell) return;
+
+      const target = e.target as HTMLElement | null;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') && !tableContainerRef.current?.contains(target)) {
+        return;
+      }
+
+      // Ctrl + C / Cmd + C -> Copy cell(s) + styles
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleCopyCells();
+        return;
+      }
+
+      // Ctrl + X / Cmd + X -> Cut cell(s) + styles
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'x' || e.key === 'X')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleCutCells();
+        return;
+      }
+
+      // Ctrl + V / Cmd + V -> Paste cell(s) + styles
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'v' || e.key === 'V')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handlePasteCells();
+        return;
+      }
+
+      // Delete or Backspace -> Clear cell contents
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        e.preventDefault();
+        e.stopPropagation();
+        handleDeleteSelectedCells();
+        return;
+      }
+
+      // Ctrl + B -> Bold
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'b' || e.key === 'B')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleToggleBold();
+        return;
+      }
+
+      // Ctrl + I -> Italic
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'i' || e.key === 'I')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleToggleItalic();
+        return;
+      }
+
+      // Ctrl + U -> Underline
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'u' || e.key === 'U')) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleToggleUnderline();
+        return;
+      }
+
+      // Enter or F2 -> Start inline cell editing
+      if (e.key === 'Enter' || e.key === 'F2') {
+        e.preventDefault();
+        e.stopPropagation();
+        setEditingCell({ r: selectedCell.r, c: selectedCell.c });
+        return;
+      }
+
+      // Arrow Keys Navigation
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectedCell.r > 0) {
+          setSelectedCell({ r: selectedCell.r - 1, c: selectedCell.c });
+          setDragStartCell(null);
+          setDragEndCell(null);
+        }
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectedCell.r < tableData.rows - 1) {
+          setSelectedCell({ r: selectedCell.r + 1, c: selectedCell.c });
+          setDragStartCell(null);
+          setDragEndCell(null);
+        }
+        return;
+      }
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        e.stopPropagation();
+        // In RTL layout, moving right is previous column index (c - 1)
+        if (selectedCell.c > 0) {
+          setSelectedCell({ r: selectedCell.r, c: selectedCell.c - 1 });
+          setDragStartCell(null);
+          setDragEndCell(null);
+        }
+        return;
+      }
+      if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        e.stopPropagation();
+        // In RTL layout, moving left is next column index (c + 1)
+        if (selectedCell.c < tableData.cols - 1) {
+          setSelectedCell({ r: selectedCell.r, c: selectedCell.c + 1 });
+          setDragStartCell(null);
+          setDragEndCell(null);
+        }
+        return;
+      }
+
+      // Type directly into cell
+      if (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        setEditingCell({ r: selectedCell.r, c: selectedCell.c });
+        updateCell(selectedCell.r, selectedCell.c, { text: e.key });
+      }
+    };
+
+    window.addEventListener('keydown', handleTableKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleTableKeyDown, true);
+    };
+  }, [
+    selectedCell,
+    editingCell,
+    tableData,
+    handleCopyCells,
+    handleCutCells,
+    handlePasteCells,
+    handleDeleteSelectedCells,
+    handleToggleBold,
+    handleToggleItalic,
+    handleToggleUnderline,
+    updateCell,
+  ]);
+
   // Add / Remove Rows & Columns
   const handleAddRow = () => {
     const newRows = tableData.rows + 1;
@@ -252,23 +670,19 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
 
   const handleRemoveRow = () => {
     if (tableData.rows <= 1) return;
-    const targetRow = selectedCell ? selectedCell.r : tableData.rows - 1;
     const newRows = tableData.rows - 1;
     const newCells: Record<string, MindMapTableCell> = {};
 
-    for (let r = 0; r < tableData.rows; r++) {
-      if (r === targetRow) continue;
-      const targetR = r > targetRow ? r - 1 : r;
+    for (let r = 0; r < newRows; r++) {
       for (let c = 0; c < tableData.cols; c++) {
         const key = getCellKey(r, c);
         if (tableData.cells[key]) {
-          newCells[getCellKey(targetR, c)] = tableData.cells[key];
+          newCells[key] = tableData.cells[key];
         }
       }
     }
 
-    const newHeights = [...(tableData.rowHeights || [])];
-    newHeights.splice(targetRow, 1);
+    const newHeights = (tableData.rowHeights || []).slice(0, newRows);
 
     onChangeData({
       ...tableData,
@@ -294,23 +708,19 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
 
   const handleRemoveCol = () => {
     if (tableData.cols <= 1) return;
-    const targetCol = selectedCell ? selectedCell.c : tableData.cols - 1;
     const newCols = tableData.cols - 1;
     const newCells: Record<string, MindMapTableCell> = {};
 
     for (let r = 0; r < tableData.rows; r++) {
-      for (let c = 0; c < tableData.cols; c++) {
-        if (c === targetCol) continue;
-        const targetC = c > targetCol ? c - 1 : c;
+      for (let c = 0; c < newCols; c++) {
         const key = getCellKey(r, c);
         if (tableData.cells[key]) {
-          newCells[getCellKey(r, targetC)] = tableData.cells[key];
+          newCells[key] = tableData.cells[key];
         }
       }
     }
 
-    const newWidths = [...(tableData.colWidths || [])];
-    newWidths.splice(targetCol, 1);
+    const newWidths = (tableData.colWidths || []).slice(0, newCols);
 
     onChangeData({
       ...tableData,
@@ -497,11 +907,63 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
   const rowHeights = tableData.rowHeights || Array(tableData.rows).fill(DEFAULT_ROW_HEIGHT);
 
   return (
-    <div className="flex flex-col h-full w-full bg-[#0a0219] rounded-b-2xl overflow-hidden select-none border-t border-purple-900/60" onClick={(e) => e.stopPropagation()}>
+    <div
+      ref={tableContainerRef}
+      data-table-container="true"
+      tabIndex={0}
+      className="flex flex-col h-full w-full bg-[#0a0219] rounded-b-2xl overflow-hidden select-none border-t border-purple-900/60 outline-none"
+      onClick={(e) => e.stopPropagation()}
+    >
       {/* Table Formatting Toolbar (Excel Ribbon Style) */}
       <div className="bg-[#12042b] p-1.5 border-b border-purple-900/60 flex items-center justify-between gap-1 flex-wrap text-xs">
-        {/* Left Toolbar: Text Styles & Format */}
+        {/* Left Toolbar: Clipboard, Text Styles, Format & Colors */}
         <div className="flex items-center gap-1 flex-wrap">
+          {/* Clipboard Group: Copy, Cut, Paste */}
+          <div className="flex items-center bg-[#1b073d] border border-purple-800/60 rounded-lg p-0.5">
+            {/* Copy (Ctrl+C) */}
+            <button
+              onClick={handleCopyCells}
+              disabled={!selectedCell}
+              className="p-1 hover:bg-purple-900/60 rounded text-cyan-300 hover:text-white transition disabled:opacity-35"
+              title="کپی محتوا و استایل سلول (Ctrl + C)"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Cut (Ctrl+X) */}
+            <button
+              onClick={handleCutCells}
+              disabled={!selectedCell}
+              className="p-1 hover:bg-purple-900/60 rounded text-amber-300 hover:text-white transition disabled:opacity-35"
+              title="کات کردن محتوا و استایل سلول (Ctrl + X)"
+            >
+              <Scissors className="w-3.5 h-3.5" />
+            </button>
+
+            {/* Paste (Ctrl+V) */}
+            <button
+              onClick={handlePasteCells}
+              disabled={!selectedCell && !hasClipboardData}
+              className={`p-1 rounded transition ${
+                hasClipboardData
+                  ? 'hover:bg-purple-900/60 text-pink-300 hover:text-white'
+                  : 'text-purple-400/50 hover:bg-purple-900/60 hover:text-purple-200'
+              } disabled:opacity-35`}
+              title="پیست کردن سلول کپی/کات شده (Ctrl + V)"
+            >
+              <ClipboardPaste className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* Copy/Cut Feedback Toast Badge */}
+          {copyFeedback && (
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-cyan-950 border border-cyan-400 text-cyan-300 animate-pulse shrink-0">
+              {copyFeedback}
+            </span>
+          )}
+
+          <div className="w-px h-4 bg-purple-800/60 mx-0.5" />
+
           {/* Bold */}
           <button
             onClick={handleToggleBold}
@@ -511,7 +973,7 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
                 ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-[0_0_8px_rgba(217,70,239,0.5)]'
                 : 'bg-[#1b073d] hover:bg-purple-900/70 text-purple-200 border-purple-800/60'
             } disabled:opacity-40`}
-            title="بولد (B)"
+            title="بولد (Ctrl + B)"
           >
             <Bold className="w-3.5 h-3.5" />
           </button>
@@ -525,7 +987,7 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
                 ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-[0_0_8px_rgba(217,70,239,0.5)]'
                 : 'bg-[#1b073d] hover:bg-purple-900/70 text-purple-200 border-purple-800/60'
             } disabled:opacity-40`}
-            title="ایتالیک (I)"
+            title="ایتالیک (Ctrl + I)"
           >
             <Italic className="w-3.5 h-3.5" />
           </button>
@@ -539,7 +1001,7 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
                 ? 'bg-fuchsia-600 text-white border-fuchsia-400 shadow-[0_0_8px_rgba(217,70,239,0.5)]'
                 : 'bg-[#1b073d] hover:bg-purple-900/70 text-purple-200 border-purple-800/60'
             } disabled:opacity-40`}
-            title="زیرخط (Underline - U)"
+            title="زیرخط (Underline - Ctrl + U)"
           >
             <Underline className="w-3.5 h-3.5" />
           </button>
@@ -770,6 +1232,15 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
                     const isEditing = editingCell?.r === rIndex && editingCell?.c === cIndex;
                     const width = colWidths[cIndex] || DEFAULT_COL_WIDTH;
 
+                    const isCutSource =
+                      globalCellClipboard?.isCut &&
+                      globalCellClipboard?.sourceNodeId === nodeId &&
+                      globalCellClipboard?.sourceRange &&
+                      rIndex >= globalCellClipboard.sourceRange.minR &&
+                      rIndex <= globalCellClipboard.sourceRange.maxR &&
+                      cIndex >= globalCellClipboard.sourceRange.minC &&
+                      cIndex <= globalCellClipboard.sourceRange.maxC;
+
                     return (
                       <td
                         key={`cell_${rIndex}_${cIndex}`}
@@ -789,7 +1260,9 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
                           backgroundColor: cell.bgColor && cell.bgColor !== 'transparent' ? cell.bgColor : undefined,
                         }}
                         className={`relative p-1 border-l border-purple-900/40 align-middle transition-colors cursor-cell group/cell select-none ${
-                          isInDragRange
+                          isCutSource
+                            ? 'ring-2 ring-amber-400 ring-dashed ring-inset z-10 bg-amber-950/30'
+                            : isInDragRange
                             ? isFormatPainterActive
                               ? 'ring-2 ring-amber-400 ring-inset z-10 bg-amber-500/20'
                               : 'ring-2 ring-cyan-400 ring-inset z-10 bg-cyan-950/30'
@@ -882,12 +1355,18 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
 
       {/* Excel Footer Info / Quick Hint Bar */}
       <div className="bg-[#12042b] px-3 py-1 border-t border-purple-900/60 flex items-center justify-between text-[10px] text-purple-400/80" dir="rtl">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-cyan-300 font-bold flex items-center gap-1">
             <Sparkles className="w-3 h-3 text-cyan-400" />
-            <span>نکته سریع:</span>
+            <span>میانبرها:</span>
           </span>
-          <span>برای درج سریع تاریخ شمسی، کلید <kbd className="px-1 py-0.5 bg-purple-950 border border-purple-700 rounded text-cyan-300 font-mono">Ctrl</kbd> را نگه داشته و روی هر سلول کلیک کنید.</span>
+          <span><kbd className="px-1 py-0.5 bg-purple-950 border border-purple-700 rounded text-cyan-300 font-mono">Ctrl+C</kbd> کپی استایل و متن</span>
+          <span className="text-purple-600">•</span>
+          <span><kbd className="px-1 py-0.5 bg-purple-950 border border-purple-700 rounded text-amber-300 font-mono">Ctrl+X</kbd> کات</span>
+          <span className="text-purple-600">•</span>
+          <span><kbd className="px-1 py-0.5 bg-purple-950 border border-purple-700 rounded text-pink-300 font-mono">Ctrl+V</kbd> پیست</span>
+          <span className="text-purple-600">•</span>
+          <span><kbd className="px-1 py-0.5 bg-purple-950 border border-purple-700 rounded text-cyan-300 font-mono">Ctrl+کلیک</kbd> تاریخ امروز</span>
         </div>
         <div className="font-mono text-purple-400 hidden sm:block">
           {tableData.rows} سطر × {tableData.cols} ستون
@@ -896,3 +1375,4 @@ export const MindMapTable: React.FC<MindMapTableProps> = React.memo(({
     </div>
   );
 });
+

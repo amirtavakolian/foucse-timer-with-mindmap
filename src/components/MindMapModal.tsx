@@ -17,6 +17,8 @@ import {
   Link2,
   Unlink,
   RotateCcw,
+  Undo2,
+  Redo2,
   Network,
   Type,
   LayoutGrid,
@@ -145,6 +147,11 @@ const DEFAULT_NODES: MindMapNode[] = [
   },
 ];
 
+export interface MindMapHistorySnapshot {
+  nodes: MindMapNode[];
+  connections: MindMapConnection[];
+}
+
 const DEFAULT_CONNS: MindMapConnection[] = [
   { id: 'conn_1', fromNodeId: 'node_root', toNodeId: 'node_sub1', color: '#06b6d4' },
   { id: 'conn_2', fromNodeId: 'node_root', toNodeId: 'node_sub2', color: '#10b981' },
@@ -168,6 +175,127 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
       return DEFAULT_CONNS;
     }
   });
+
+  // History State for full Undo/Redo (Ctrl+Z / Ctrl+Y)
+  const [historyPast, setHistoryPast] = useState<MindMapHistorySnapshot[]>([]);
+  const [historyFuture, setHistoryFuture] = useState<MindMapHistorySnapshot[]>([]);
+
+  const nodesRef = useRef(nodes);
+  useEffect(() => {
+    nodesRef.current = nodes;
+  }, [nodes]);
+
+  const connectionsRef = useRef(connections);
+  useEffect(() => {
+    connectionsRef.current = connections;
+  }, [connections]);
+
+  const isHistoryActionRef = useRef(false);
+  const dragStartSnapshotRef = useRef<MindMapHistorySnapshot | null>(null);
+  const textFocusSnapshotRef = useRef<MindMapHistorySnapshot | null>(null);
+
+  // Record a history snapshot before state mutations
+  const recordSnapshot = useCallback((customNodes?: MindMapNode[], customConns?: MindMapConnection[]) => {
+    if (isHistoryActionRef.current) return;
+    const currentSnapshot: MindMapHistorySnapshot = {
+      nodes: JSON.parse(JSON.stringify(customNodes || nodesRef.current)),
+      connections: JSON.parse(JSON.stringify(customConns || connectionsRef.current)),
+    };
+
+    setHistoryPast((prev) => {
+      const last = prev[prev.length - 1];
+      if (
+        last &&
+        JSON.stringify(last.nodes) === JSON.stringify(currentSnapshot.nodes) &&
+        JSON.stringify(last.connections) === JSON.stringify(currentSnapshot.connections)
+      ) {
+        return prev;
+      }
+      return [...prev, currentSnapshot].slice(-50);
+    });
+    setHistoryFuture([]);
+  }, []);
+
+  // Undo (Ctrl+Z / Cmd+Z)
+  const handleUndo = useCallback(() => {
+    setHistoryPast((past) => {
+      if (past.length === 0) return past;
+      const newPast = [...past];
+      const targetState = newPast.pop()!;
+
+      const currentSnapshot: MindMapHistorySnapshot = {
+        nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+        connections: JSON.parse(JSON.stringify(connectionsRef.current)),
+      };
+
+      setHistoryFuture((future) => [currentSnapshot, ...future].slice(0, 50));
+
+      isHistoryActionRef.current = true;
+      setNodes(targetState.nodes);
+      setConnections(targetState.connections);
+      setTimeout(() => {
+        isHistoryActionRef.current = false;
+      }, 50);
+
+      return newPast;
+    });
+  }, []);
+
+  // Redo (Ctrl+Y / Cmd+Y / Ctrl+Shift+Z / Cmd+Shift+Z)
+  const handleRedo = useCallback(() => {
+    setHistoryFuture((future) => {
+      if (future.length === 0) return future;
+      const newFuture = [...future];
+      const targetState = newFuture.shift()!;
+
+      const currentSnapshot: MindMapHistorySnapshot = {
+        nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+        connections: JSON.parse(JSON.stringify(connectionsRef.current)),
+      };
+
+      setHistoryPast((past) => [...past, currentSnapshot].slice(-50));
+
+      isHistoryActionRef.current = true;
+      setNodes(targetState.nodes);
+      setConnections(targetState.connections);
+      setTimeout(() => {
+        isHistoryActionRef.current = false;
+      }, 50);
+
+      return newFuture;
+    });
+  }, []);
+
+  // Tracking Focus/Blur for Text Inputs to capture Undo points gracefully
+  const handleInputFocus = useCallback(() => {
+    textFocusSnapshotRef.current = {
+      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+      connections: JSON.parse(JSON.stringify(connectionsRef.current)),
+    };
+  }, []);
+
+  const handleInputBlur = useCallback(() => {
+    if (textFocusSnapshotRef.current) {
+      const currentNodesStr = JSON.stringify(nodesRef.current);
+      const prevNodesStr = JSON.stringify(textFocusSnapshotRef.current.nodes);
+      if (currentNodesStr !== prevNodesStr) {
+        const snap = textFocusSnapshotRef.current;
+        setHistoryPast((prev) => {
+          const last = prev[prev.length - 1];
+          if (
+            last &&
+            JSON.stringify(last.nodes) === JSON.stringify(snap.nodes) &&
+            JSON.stringify(last.connections) === JSON.stringify(snap.connections)
+          ) {
+            return prev;
+          }
+          return [...prev, snap].slice(-50);
+        });
+        setHistoryFuture([]);
+      }
+      textFocusSnapshotRef.current = null;
+    }
+  }, []);
 
   // Canvas Pan & Zoom state
   const [pan, setPan] = useState({ x: 100, y: 100 });
@@ -313,13 +441,37 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     };
     
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Don't trigger if user is typing in an input or textarea
+      // Check for Undo / Redo first (allow globally or within mind map)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+        return;
+      }
+
+      if (
+        ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) ||
+        ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z') && e.shiftKey)
+      ) {
+        e.preventDefault();
+        handleRedo();
+        return;
+      }
+
+      // Don't trigger other node shortcuts if user is typing in an input or textarea or inside a table
       const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA') return;
+      if (
+        target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.closest('table') ||
+        target.closest('[data-table-container="true"]')
+      ) {
+        return;
+      }
 
       if (e.key === 'Delete' || e.key === 'Backspace') {
         if (selectedNodeIds.length > 0) {
           e.preventDefault();
+          recordSnapshot();
           const setIds = new Set(selectedNodeIds);
           setNodes((prev) => prev.filter((n) => !setIds.has(n.id)));
           setConnections((prev) => prev.filter((c) => !setIds.has(c.fromNodeId) && !setIds.has(c.toNodeId)));
@@ -349,6 +501,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         if (copiedNodeTemplate) {
+          recordSnapshot();
           const viewWidth = containerRef.current?.clientWidth || 800;
           const viewHeight = containerRef.current?.clientHeight || 600;
           
@@ -387,7 +540,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
       document.removeEventListener('fullscreenchange', handleFSChange);
       document.removeEventListener('keydown', handleKeyDown);
     };
-  }, [selectedNodeId, selectedNodeIds, copiedNodeTemplate, nodes, pan, zoom]);
+  }, [selectedNodeId, selectedNodeIds, copiedNodeTemplate, nodes, pan, zoom, handleUndo, handleRedo, recordSnapshot]);
 
   const handleToggleFullscreen = () => {
     if (!document.fullscreenElement) {
@@ -445,6 +598,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   // Delete All Selected Nodes
   const handleDeleteSelectedNodes = () => {
     if (selectedNodeIds.length === 0) return;
+    recordSnapshot();
     const setIds = new Set(selectedNodeIds);
     setNodes((prev) => prev.filter((n) => !setIds.has(n.id)));
     setConnections((prev) => prev.filter((c) => !setIds.has(c.fromNodeId) && !setIds.has(c.toNodeId)));
@@ -478,6 +632,10 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
       // If nodes are already selected, right-click dragging anywhere moves the group
       if (selectedNodeIds.length > 0) {
+        dragStartSnapshotRef.current = {
+          nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+          connections: JSON.parse(JSON.stringify(connectionsRef.current)),
+        };
         setIsGroupDragging(true);
         setGroupDragStartMouse({ x: e.clientX, y: e.clientY });
         const initialPos: Record<string, { x: number; y: number }> = {};
@@ -723,6 +881,30 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
       cancelAnimationFrame(rafRef.current);
     }
 
+    if (dragStartSnapshotRef.current) {
+      const currentNodesStr = JSON.stringify(nodesRef.current);
+      const currentConnsStr = JSON.stringify(connectionsRef.current);
+      const prevNodesStr = JSON.stringify(dragStartSnapshotRef.current.nodes);
+      const prevConnsStr = JSON.stringify(dragStartSnapshotRef.current.connections);
+
+      if (currentNodesStr !== prevNodesStr || currentConnsStr !== prevConnsStr) {
+        const snap = dragStartSnapshotRef.current;
+        setHistoryPast((prev) => {
+          const last = prev[prev.length - 1];
+          if (
+            last &&
+            JSON.stringify(last.nodes) === JSON.stringify(snap.nodes) &&
+            JSON.stringify(last.connections) === JSON.stringify(snap.connections)
+          ) {
+            return prev;
+          }
+          return [...prev, snap].slice(-50);
+        });
+        setHistoryFuture([]);
+      }
+      dragStartSnapshotRef.current = null;
+    }
+
     // If clicked or right clicked without dragging -> Deselect all nodes
     if (
       (rightClickStartScreen && !isRightClickDragging) ||
@@ -756,6 +938,10 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   ) => {
     e.stopPropagation();
     e.preventDefault();
+    dragStartSnapshotRef.current = {
+      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+      connections: JSON.parse(JSON.stringify(connectionsRef.current)),
+    };
     setSelectedNodeId(node.id);
     setResizingState({
       nodeId: node.id,
@@ -769,8 +955,31 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     });
   };
 
-  // Mouse Wheel Zoom
+  // Mouse Wheel Zoom (only if target is not inside a scrollable element or if scrollable element cannot scroll further in that direction)
   const handleWheel = (e: React.WheelEvent) => {
+    // Check if the wheel event occurred inside a scrollable element (like table, todo list, notes, etc.)
+    let target = e.target as HTMLElement | null;
+    let foundScrollable = false;
+
+    while (target && target !== containerRef.current) {
+      const overflowY = window.getComputedStyle(target).overflowY;
+      const overflowX = window.getComputedStyle(target).overflowX;
+      const isScrollableY = (overflowY === 'auto' || overflowY === 'scroll') && target.scrollHeight > target.clientHeight;
+      const isScrollableX = (overflowX === 'auto' || overflowX === 'scroll') && target.scrollWidth > target.clientWidth;
+
+      if (isScrollableY || isScrollableX) {
+        // The element has scrollable content. Let the browser handle natural scrolling!
+        foundScrollable = true;
+        break;
+      }
+      target = target.parentElement;
+    }
+
+    if (foundScrollable) {
+      // Allow internal scrolling on the node/table/list, do not zoom the canvas
+      return;
+    }
+
     e.preventDefault();
     const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
     setZoom((prev) => Math.min(Math.max(prev * zoomFactor, 0.25), 2.5));
@@ -779,6 +988,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   // Node Formatting Handlers
   const handleToggleNodeBold = (nodeId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    recordSnapshot();
     setNodes((prev) =>
       prev.map((n) => (n.id === nodeId ? { ...n, isBold: !n.isBold } : n))
     );
@@ -786,6 +996,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   const handleToggleNodeItalic = (nodeId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    recordSnapshot();
     setNodes((prev) =>
       prev.map((n) => (n.id === nodeId ? { ...n, isItalic: !n.isItalic } : n))
     );
@@ -819,6 +1030,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     e?: React.MouseEvent
   ) => {
     if (e) e.stopPropagation();
+    recordSnapshot();
     const clamped = Math.max(8, Math.min(60, fontSize));
     setNodes((prev) =>
       prev.map((n) => {
@@ -846,6 +1058,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   const handleChangeNodeColor = (nodeId: string, color: MindMapNode['color'], e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    recordSnapshot();
     setNodes((prev) =>
       prev.map((n) => (n.id === nodeId ? { ...n, color } : n))
     );
@@ -858,6 +1071,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   };
 
   const handleUpdateTableData = (nodeId: string, tableData: MindMapTableData) => {
+    recordSnapshot();
     setNodes((prev) =>
       prev.map((n) => (n.id === nodeId ? { ...n, tableData } : n))
     );
@@ -865,6 +1079,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   // Add Node
   const handleAddNode = (shape: MindMapNode['shape'] = 'rectangle', color: MindMapNode['color'] = 'fuchsia') => {
+    recordSnapshot();
     // Position exactly in the center of current visible canvas viewport
     const container = containerRef.current;
     const viewWidth = container?.clientWidth || window.innerWidth;
@@ -946,6 +1161,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   const handleConfirmDeleteNode = () => {
     if (!nodeToDelete) return;
+    recordSnapshot();
     const id = nodeToDelete.id;
     setNodes((prev) => prev.filter((n) => n.id !== id));
     setConnections((prev) => prev.filter((c) => c.fromNodeId !== id && c.toNodeId !== id));
@@ -958,6 +1174,29 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   const handleNodeMouseDown = (node: MindMapNode, e: React.MouseEvent) => {
     e.stopPropagation();
 
+    // If clicking on an input, textarea, button, interactive control, or inside a table/cell,
+    // do NOT trigger node drag - allow text selection and internal interactions!
+    const target = e.target as HTMLElement | null;
+    if (
+      target &&
+      (target.tagName === 'INPUT' ||
+        target.tagName === 'TEXTAREA' ||
+        target.tagName === 'BUTTON' ||
+        target.tagName === 'SELECT' ||
+        target.isContentEditable ||
+        target.closest('input') ||
+        target.closest('textarea') ||
+        target.closest('button') ||
+        target.closest('table') ||
+        target.closest('[data-no-drag="true"]'))
+    ) {
+      // Select the node so formatting controls / active state work, but don't drag
+      if (!selectedNodeIds.includes(node.id)) {
+        setSelectedNodeId(node.id);
+      }
+      return;
+    }
+
     if (connectingFromId) {
       if (connectingFromId !== node.id) {
         // Connect connectingFromId -> node.id
@@ -968,6 +1207,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
         );
 
         if (!exists) {
+          recordSnapshot();
           const newConn: MindMapConnection = {
             id: `conn_${Date.now()}`,
             fromNodeId: connectingFromId,
@@ -980,6 +1220,12 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
       setConnectingFromId(null);
       return;
     }
+
+    // Capture initial state before moving node or group of nodes
+    dragStartSnapshotRef.current = {
+      nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+      connections: JSON.parse(JSON.stringify(connectionsRef.current)),
+    };
 
     // Right Click on Node (e.button === 2) -> Group Drag
     if (e.button === 2) {
@@ -1051,6 +1297,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     const text = newTodoTexts[nodeId]?.trim();
     if (!text) return;
 
+    recordSnapshot();
     setNodes((prev) =>
       prev.map((n) => {
         if (n.id === nodeId) {
@@ -1076,6 +1323,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
     if (lines.length === 0) return;
 
+    recordSnapshot();
     const now = Date.now();
     const newTodos: MindMapTodo[] = lines.map((line, idx) => ({
       id: `t_${now}_${idx}`,
@@ -1101,6 +1349,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   // Toggle todo completion
   const handleToggleTodo = (nodeId: string, todoId: string) => {
+    recordSnapshot();
     setNodes((prev) =>
       prev.map((n) => {
         if (n.id === nodeId) {
@@ -1116,6 +1365,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   // Delete todo from node
   const handleDeleteTodo = (nodeId: string, todoId: string) => {
+    recordSnapshot();
     setNodes((prev) =>
       prev.map((n) => {
         if (n.id === nodeId) {
@@ -1141,6 +1391,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
     const { nodeId, todoId, text } = editingTodo;
     const trimmed = text.trim();
     if (trimmed) {
+      recordSnapshot();
       setNodes((prev) =>
         prev.map((n) => {
           if (n.id === nodeId) {
@@ -1178,6 +1429,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   // Swap two todos inside a node
   const handleSwapTodos = (nodeId: string, todoId1: string, todoId2: string) => {
+    recordSnapshot();
     setNodes((prev) =>
       prev.map((n) => {
         if (n.id === nodeId) {
@@ -1199,6 +1451,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   // Move todo one position up or down
   const handleMoveTodoDirection = (nodeId: string, todoId: string, direction: 'up' | 'down', e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    recordSnapshot();
     setNodes((prev) =>
       prev.map((n) => {
         if (n.id === nodeId) {
@@ -1226,6 +1479,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
   // Toggle Node Lock State
   const handleToggleLockNode = (nodeId: string, e: React.MouseEvent) => {
     e.stopPropagation();
+    recordSnapshot();
     setNodes((prev) =>
       prev.map((n) => (n.id === nodeId ? { ...n, isLocked: !n.isLocked } : n))
     );
@@ -1269,6 +1523,7 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
 
   // Delete Connection
   const handleDeleteConnection = (connId: string) => {
+    recordSnapshot();
     setConnections((prev) => prev.filter((c) => c.id !== connId));
   };
 
@@ -1411,8 +1666,37 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
           )}
         </div>
 
-        {/* Right Controls: Zoom & Close */}
+        {/* Right Controls: Undo/Redo, Zoom & Close */}
         <div className="flex items-center gap-2">
+          {/* Undo & Redo History Controls */}
+          <div className="flex items-center bg-[#150533] border border-fuchsia-800/60 rounded-xl p-0.5 shadow-[0_0_10px_rgba(217,70,239,0.15)]">
+            <button
+              onClick={handleUndo}
+              disabled={historyPast.length === 0}
+              className={`p-1.5 rounded-lg transition flex items-center justify-center ${
+                historyPast.length > 0
+                  ? 'hover:bg-fuchsia-900/60 text-cyan-300 hover:text-white cursor-pointer active:scale-95'
+                  : 'text-fuchsia-700/40 cursor-not-allowed'
+              }`}
+              title="بازگردانی مرحله قبل (Undo - Ctrl+Z)"
+            >
+              <Undo2 className="w-3.5 h-3.5" />
+            </button>
+            <div className="w-px h-3.5 bg-fuchsia-800/60 mx-0.5" />
+            <button
+              onClick={handleRedo}
+              disabled={historyFuture.length === 0}
+              className={`p-1.5 rounded-lg transition flex items-center justify-center ${
+                historyFuture.length > 0
+                  ? 'hover:bg-fuchsia-900/60 text-cyan-300 hover:text-white cursor-pointer active:scale-95'
+                  : 'text-fuchsia-700/40 cursor-not-allowed'
+              }`}
+              title="انجام مجدد (Redo - Ctrl+Y / Ctrl+Shift+Z)"
+            >
+              <Redo2 className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
           {/* Zoom controls with Manual Keyboard Input */}
           <div className="flex items-center bg-[#150533] border border-fuchsia-800/60 rounded-xl p-0.5 shadow-[0_0_10px_rgba(217,70,239,0.15)]">
             <button
@@ -1824,6 +2108,8 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                           type="text"
                           dir="rtl"
                           value={node.title}
+                          onFocus={handleInputFocus}
+                          onBlur={handleInputBlur}
                           onChange={(e) => handleUpdateTitle(node.id, e.target.value)}
                           style={{ fontSize: `${titleFontPx}px` }}
                           className={`bg-transparent outline-none flex-1 min-w-0 border-b border-transparent focus:border-purple-400 transition text-right font-bold ${
@@ -1837,6 +2123,8 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                         type="text"
                         dir="rtl"
                         value={node.title}
+                        onFocus={handleInputFocus}
+                        onBlur={handleInputBlur}
                         onChange={(e) => handleUpdateTitle(node.id, e.target.value)}
                         style={{ fontSize: `${titleFontPx}px` }}
                         className={`bg-transparent outline-none flex-1 min-w-0 border-b border-transparent focus:border-fuchsia-400 transition text-right ${
@@ -2094,6 +2382,8 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     <textarea
                       dir="rtl"
                       value={node.notes || ''}
+                      onFocus={handleInputFocus}
+                      onBlur={handleInputBlur}
                       onChange={(e) => handleUpdateNotes(node.id, e.target.value)}
                       placeholder="متن توصیفی لیبل (اختیاری)..."
                       style={{ fontSize: `${bodyFontPx}px` }}
@@ -2107,6 +2397,8 @@ export const MindMapModal: React.FC<MindMapModalProps> = ({ isOpen, onClose, onS
                     <textarea
                       dir="rtl"
                       value={node.notes || ''}
+                      onFocus={handleInputFocus}
+                      onBlur={handleInputBlur}
                       onChange={(e) => handleUpdateNotes(node.id, e.target.value)}
                       placeholder="متن یادداشت را اینجا بنویسید..."
                       style={{ fontSize: `${bodyFontPx}px` }}
