@@ -345,28 +345,30 @@ export function loadActiveTimerState(): ActiveTimerState | null {
       const state: ActiveTimerState = JSON.parse(raw);
       if (state && state.status === 'running') {
         const now = Date.now();
-        const lastHeartbeat = state.lastHeartbeat || state.activeSession?.startTime || now;
-        const gap = now - lastHeartbeat;
-
-        // If more than 6 seconds elapsed since last heartbeat, the system was shut down, sleeping, or closed!
-        if (gap > 6000) {
-          // If some real work was done before shutdown, save that session cleanly
-          if (state.activeSession && state.activeSession.elapsedSeconds >= 5) {
-            const actualEnd = state.activeSession.startTime + state.activeSession.elapsedSeconds * 1000;
-            const shutdownSession: FocusSession = {
+        if (state.endTime && now < state.endTime) {
+          // Timer is still within its target countdown
+          state.remainingSeconds = Math.max(0, Math.ceil((state.endTime - now) / 1000));
+          if (state.activeSession) {
+            state.activeSession.elapsedSeconds = Math.max(0, state.targetSeconds - state.remainingSeconds);
+          }
+        } else if (state.endTime && now >= state.endTime) {
+          // Session expired naturally
+          if (state.activeSession) {
+            const accurateEnd = state.activeSession.startTime + state.targetSeconds * 1000;
+            const completedSession: FocusSession = {
               id: state.activeSession.id,
               startTime: state.activeSession.startTime,
-              endTime: actualEnd,
+              endTime: accurateEnd,
               durationSeconds: state.targetSeconds,
-              elapsedSeconds: state.activeSession.elapsedSeconds,
+              elapsedSeconds: state.targetSeconds,
               taskName: state.activeTaskName,
-              completed: false,
+              completed: true,
               dateStr: getTodayDateStr(),
             };
-            saveSession(shutdownSession);
+            saveSession(completedSession);
           }
-          // Do not count shutdown/sleep time as focus! Set timer state to paused with preserved remaining time
-          state.status = 'paused';
+          state.status = 'completed';
+          state.remainingSeconds = 0;
           state.endTime = null;
           state.activeSession = null;
           saveActiveTimerState(state);

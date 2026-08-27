@@ -192,7 +192,7 @@ export default function App() {
     setRemainingSeconds(targetSeconds);
   };
 
-  // Main Timer Countdown Loop Effect (Real Wall-Clock Time Driven with Sleep/Suspension Safeguard)
+  // Main Timer Countdown Loop Effect (Real Wall-Clock Time Driven)
   useEffect(() => {
     if (status === 'running') {
       const now = Date.now();
@@ -204,38 +204,7 @@ export default function App() {
       const tick = () => {
         if (!endTimeRef.current) return;
         const currentNow = Date.now();
-        const deltaSinceLastTick = currentNow - lastTickTimeRef.current;
         lastTickTimeRef.current = currentNow;
-
-        // Sleep / suspension detection: If gap between ticks > 4000ms (system went to sleep, lid closed, or shut down)
-        if (deltaSinceLastTick > 4000) {
-          // Finalize active session up to the pre-sleep moment
-          if (activeSessionRef.current && activeSessionRef.current.elapsedSeconds >= 5) {
-            const accurateEnd = activeSessionRef.current.startTime + activeSessionRef.current.elapsedSeconds * 1000;
-            const sleepSession: FocusSession = {
-              id: activeSessionRef.current.id,
-              startTime: activeSessionRef.current.startTime,
-              endTime: accurateEnd,
-              durationSeconds: targetSecondsRef.current,
-              elapsedSeconds: activeSessionRef.current.elapsedSeconds,
-              taskName: activeTaskNameRef.current,
-              completed: false,
-              dateStr: getTodayDateStr(),
-            };
-
-            saveSession(sleepSession);
-            const allSessions = loadSessions();
-            setSessions(allSessions);
-            const todayStr = getTodayDateStr();
-            const todaySessions = allSessions.filter((s) => s.dateStr === todayStr);
-            saveIntervalReportForDate(todayStr, generateDayIntervals(todayStr, todaySessions, null, false));
-          }
-
-          endTimeRef.current = null;
-          setActiveSession(null);
-          setStatus('paused');
-          return;
-        }
 
         const diffSec = Math.max(0, Math.ceil((endTimeRef.current - currentNow) / 1000));
 
@@ -289,37 +258,48 @@ export default function App() {
     };
   }, [status]);
 
-  // Sync timer immediately when tab/window gains focus or visibility changes
+  // Sync timer immediately when tab/window gains focus or visibility changes without interruption
   useEffect(() => {
     const handleSyncOnWakeup = () => {
-      if (status === 'running') {
+      if (status === 'running' && endTimeRef.current) {
         const now = Date.now();
-        const deltaMs = now - lastTickTimeRef.current;
-        if (deltaMs > 4000) {
-          // System just woke up from sleep / suspension
-          lastTickTimeRef.current = now;
-          if (activeSessionRef.current && activeSessionRef.current.elapsedSeconds >= 5) {
-            const accurateEnd = activeSessionRef.current.startTime + activeSessionRef.current.elapsedSeconds * 1000;
-            const sleepSession: FocusSession = {
+        const diffSec = Math.max(0, Math.ceil((endTimeRef.current - now) / 1000));
+        setRemainingSeconds(diffSec);
+        if (activeSessionRef.current) {
+          const newElapsed = targetSecondsRef.current - diffSec;
+          setActiveSession((a) => (a ? { ...a, elapsedSeconds: newElapsed } : null));
+        }
+
+        if (diffSec <= 0) {
+          if (timerRef.current) clearInterval(timerRef.current);
+
+          if (activeSessionRef.current) {
+            const accurateEnd = activeSessionRef.current.startTime + targetSecondsRef.current * 1000;
+            const completedSession: FocusSession = {
               id: activeSessionRef.current.id,
               startTime: activeSessionRef.current.startTime,
               endTime: accurateEnd,
               durationSeconds: targetSecondsRef.current,
-              elapsedSeconds: activeSessionRef.current.elapsedSeconds,
+              elapsedSeconds: targetSecondsRef.current,
               taskName: activeTaskNameRef.current,
-              completed: false,
+              completed: true,
               dateStr: getTodayDateStr(),
             };
-            saveSession(sleepSession);
+
+            saveSession(completedSession);
             const allSessions = loadSessions();
             setSessions(allSessions);
             const todayStr = getTodayDateStr();
             const todaySessions = allSessions.filter((s) => s.dateStr === todayStr);
             saveIntervalReportForDate(todayStr, generateDayIntervals(todayStr, todaySessions, null, false));
           }
+
           endTimeRef.current = null;
+          setStatus('completed');
+          setLastCompletedDuration(targetSecondsRef.current);
+          setIsNotificationOpen(true);
           setActiveSession(null);
-          setStatus('paused');
+          setRemainingSeconds(0);
         }
       }
     };
