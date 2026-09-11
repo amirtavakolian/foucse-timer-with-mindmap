@@ -1,4 +1,4 @@
-import { AppSettings, FocusSession, TaskItem } from '../types';
+import { AppSettings, FocusSession, TaskItem, StairStep, StaircaseProject, NoteItem } from '../types';
 import { getTodayDateStr, TimeIntervalRecord, generateDayIntervals } from './time';
 
 export const SESSIONS_KEY = 'win_focus_timer_sessions_v1';
@@ -6,6 +6,9 @@ export const SETTINGS_KEY = 'win_focus_timer_settings_v1';
 export const TASKS_KEY = 'win_focus_timer_tasks_v1';
 export const MINDMAP_NODES_KEY = 'focustime_mindmap_nodes_v1';
 export const MINDMAP_CONNS_KEY = 'focustime_mindmap_conns_v1';
+export const STAIRCASE_STEPS_KEY = 'focustime_staircase_steps_v1';
+export const STAIRCASE_PROJECTS_KEY = 'focustime_staircase_projects_v1';
+export const NOTES_KEY = 'focustime_notes_v1';
 export const ACTIVE_TIMER_KEY = 'focustime_active_timer_v1';
 export const INITIAL_START_DATE_KEY = 'focustime_initial_start_date_v1';
 export const INTERVAL_REPORTS_KEY = 'focustime_interval_reports_v1';
@@ -302,6 +305,8 @@ export function exportBackupData(): string {
     mindmapNodes: loadMindMapNodes(),
     mindmapConnections: loadMindMapConnections(),
     intervalReports: loadIntervalReports(),
+    staircaseProjects: loadStaircaseProjects(),
+    notes: loadNotes(),
     exportDate: new Date().toISOString(),
   };
   return JSON.stringify(data, null, 2);
@@ -317,6 +322,12 @@ export function importBackupData(jsonStr: string): boolean {
     if (Array.isArray(parsed.mindmapConnections)) saveMindMapConnections(parsed.mindmapConnections);
     if (parsed.intervalReports && typeof parsed.intervalReports === 'object') {
       saveIntervalReports(parsed.intervalReports);
+    }
+    if (Array.isArray(parsed.staircaseProjects)) {
+      saveStaircaseProjects(parsed.staircaseProjects);
+    }
+    if (Array.isArray(parsed.notes)) {
+      saveNotes(parsed.notes);
     }
     return true;
   } catch {
@@ -395,5 +406,104 @@ export function clearActiveTimerState(): void {
     localStorage.removeItem(ACTIVE_TIMER_KEY);
   } catch (e) {
     console.warn('Failed to clear active timer state', e);
+  }
+}
+
+export function loadStaircaseSteps(): StairStep[] | null {
+  try {
+    const raw = localStorage.getItem(STAIRCASE_STEPS_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {
+    console.warn('Failed to load staircase steps', e);
+  }
+  return null;
+}
+
+export function saveStaircaseSteps(steps: StairStep[]): void {
+  try {
+    localStorage.setItem(STAIRCASE_STEPS_KEY, JSON.stringify(steps));
+    syncApiSave(STAIRCASE_STEPS_KEY, steps);
+  } catch (e) {
+    console.warn('Failed to save staircase steps', e);
+  }
+}
+
+export function loadStaircaseProjects(): StaircaseProject[] | null {
+  try {
+    const raw = localStorage.getItem(STAIRCASE_PROJECTS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+
+    // Migration check: If single steps existed, convert to first project
+    const legacySteps = loadStaircaseSteps();
+    if (legacySteps && legacySteps.length > 0) {
+      const initialProject: StaircaseProject = {
+        id: 'staircase-default-1',
+        title: 'پلکان اصلی اهداف',
+        createdAt: Date.now(),
+        steps: legacySteps,
+      };
+      saveStaircaseProjects([initialProject]);
+      return [initialProject];
+    }
+  } catch (e) {
+    console.warn('Failed to load staircase projects', e);
+  }
+  return null;
+}
+
+export function saveStaircaseProjects(projects: StaircaseProject[]): void {
+  try {
+    localStorage.setItem(STAIRCASE_PROJECTS_KEY, JSON.stringify(projects));
+    syncApiSave(STAIRCASE_PROJECTS_KEY, projects);
+  } catch (e) {
+    console.warn('Failed to save staircase projects', e);
+  }
+}
+
+export const DEFAULT_INITIAL_NOTES: NoteItem[] = [
+  {
+    id: 'note-welcome-1',
+    title: 'دفترچه یادداشت شخصی تمرکز',
+    content: `به دفترچه یادداشت FocusTime خوش آمدید! 📝
+
+این فضا برای ثبت ایده‌ها، خلاصه جلسات کاری، نکات مهم و یادداشت‌های روزانه شما طراحی شده است.
+
+ویژگی‌های این دفترچه:
+• ذخیره آنی و خودکار: با نوشتن هر کلمه، مطالب بلافاصله هم در مرورگر و هم در فایل امن سرور ذخیره می‌شوند.
+• جستجوی سریع: با تایپ کلمات در نوار جستجو، یادداشت مورد نظر بلافاصله فیلتر می‌شود.
+• سنجاق کردن (Pin): یادداشت‌های مهم را در بالای لیست نگه دارید.
+• رنگ‌بندی: برای هر یادداشت می‌توانید برچسب رنگی دلخواه انتخاب کنید.
+• کپی و دانلود: می‌توانید کل متن یادداشت را با یک کلیک کپی کرده یا با فرمت txt دانلود کنید.
+
+برای نوشتن یادداشت جدید، از دکمه «+ یادداشت جدید» استفاده کنید.`,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    isPinned: true,
+    color: '#8b5cf6',
+  },
+];
+
+export function loadNotes(): NoteItem[] {
+  try {
+    const raw = localStorage.getItem(NOTES_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+    }
+  } catch (e) {
+    console.warn('Failed to load notes from storage', e);
+  }
+  return DEFAULT_INITIAL_NOTES;
+}
+
+export function saveNotes(notes: NoteItem[]): void {
+  try {
+    localStorage.setItem(NOTES_KEY, JSON.stringify(notes));
+    syncApiSave(NOTES_KEY, notes);
+  } catch (e) {
+    console.warn('Failed to save notes to storage', e);
   }
 }

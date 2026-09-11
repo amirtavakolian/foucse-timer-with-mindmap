@@ -46,3 +46,38 @@ export interface TaskItem {
   targetMinutes: number;
   completedMinutes: number;
 }
+
+export interface StaircaseTodo {
+  id: string;
+  text: string;
+  completed: boolean;
+  createdAt: number;
+}
+
+export interface StairStep {
+  id: string;
+  title: string;
+  color?: string;
+  createdAt?: number;
+  todos: StaircaseTodo[];
+}
+
+export interface StaircaseProject {
+  id: string;
+  title: string;
+  description?: string;
+  createdAt: number;
+  steps: StairStep[];
+  notes?: string;
+}
+
+export interface NoteItem {
+  id: string;
+  title: string;
+  content: string;
+  createdAt: number;
+  updatedAt: number;
+  isPinned?: boolean;
+  color?: string; // Hex or theme color for categorization
+  tags?: string[];
+}

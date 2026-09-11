@@ -7,6 +7,7 @@ import { NotificationModal } from './components/NotificationModal';
 import { TaskList } from './components/TaskList';
 import { SettingsModal } from './components/SettingsModal';
 import { WindowsPwaGuide } from './components/WindowsPwaGuide';
+import { NotebookModal } from './components/NotebookModal';
 
 import { AppSettings, FocusSession, TaskItem, TimerStatus } from './types';
 import {
@@ -75,6 +76,7 @@ export default function App() {
 
   // Window frame states
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
+  const [isNotebookOpen, setIsNotebookOpen] = useState<boolean>(false);
   const [isPwaGuideOpen, setIsPwaGuideOpen] = useState<boolean>(false);
   const [isMinimized, setIsMinimized] = useState<boolean>(false);
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
@@ -433,6 +435,7 @@ export default function App() {
         settings={settings}
         onUpdateSettings={handleUpdateSettings}
         onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenNotebook={() => setIsNotebookOpen(true)}
         onOpenPwaGuide={() => setIsPwaGuideOpen(true)}
         isMinimized={isMinimized}
         onToggleMinimize={() => setIsMinimized(!isMinimized)}
@@ -595,6 +598,12 @@ export default function App() {
           setTasks(loadTasks());
           setSettings(loadSettings());
         }}
+      />
+
+      {/* Digital Notebook Modal */}
+      <NotebookModal
+        isOpen={isNotebookOpen}
+        onClose={() => setIsNotebookOpen(false)}
       />
 
       {/* Windows PWA Installation Guide */}

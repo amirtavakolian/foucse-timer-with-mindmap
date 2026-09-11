@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { Plus, Check, Trash2, ListTodo, Target, Network, Sparkles, ListPlus } from 'lucide-react';
+import { Plus, Check, Trash2, ListTodo, Target, Network, Sparkles, ListPlus, TrendingUp } from 'lucide-react';
 import { TaskItem } from '../types';
 import { toPersianDigits } from '../utils/time';
 import { MindMapModal } from './MindMapModal';
+import { StaircaseModal } from './StaircaseModal';
 
 interface TaskListProps {
   tasks: TaskItem[];
@@ -19,8 +20,10 @@ export const TaskList: React.FC<TaskListProps> = React.memo(({
 }) => {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [isMindMapOpen, setIsMindMapOpen] = useState(false);
+  const [isStaircaseOpen, setIsStaircaseOpen] = useState(false);
   const [isBatchOpen, setIsBatchOpen] = useState(false);
   const [batchText, setBatchText] = useState('');
+  const [taskToDelete, setTaskToDelete] = useState<TaskItem | null>(null);
 
   const handleAddTask = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,6 +84,17 @@ export const TaskList: React.FC<TaskListProps> = React.memo(({
     onUpdateTasks([...tasks, ...createdTasks]);
   };
 
+  const handleSyncFromStaircase = (newTasks: string[]) => {
+    const createdTasks: TaskItem[] = newTasks.map((title, idx) => ({
+      id: `stair_${Date.now()}_${idx}`,
+      title,
+      completed: false,
+      targetMinutes: 25,
+      completedMinutes: 0,
+    }));
+    onUpdateTasks([...tasks, ...createdTasks]);
+  };
+
   return (
     <div className="w-full p-6 sm:p-8 rounded-3xl bg-[#0d0221] border border-fuchsia-500/40 shadow-[0_0_25px_rgba(217,70,239,0.12)]">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-fuchsia-900/50">
@@ -94,15 +108,29 @@ export const TaskList: React.FC<TaskListProps> = React.memo(({
           </p>
         </div>
 
-        {/* Mind Map Diagram Modal Trigger Button */}
-        <button
-          onClick={() => setIsMindMapOpen(true)}
-          className="px-4 py-2 rounded-2xl bg-gradient-to-r from-fuchsia-600 via-purple-600 to-cyan-600 hover:from-fuchsia-500 hover:to-cyan-500 text-white font-extrabold text-xs transition-all duration-300 flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_25px_rgba(6,182,212,0.6)] hover:scale-[1.02] active:scale-[0.98]"
-        >
-          <Network className="w-4 h-4 text-cyan-200" />
-          <span>نقشه ذهنی و دیاگرام (Mind Map Canvas)</span>
-          <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
-        </button>
+        {/* Modal Triggers: Staircase Todo & Mind Map */}
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Staircase Todo Modal Trigger Button */}
+          <button
+            onClick={() => setIsStaircaseOpen(true)}
+            className="px-4 py-2 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-orange-700 hover:from-amber-500 hover:to-orange-600 text-white font-extrabold text-xs transition-all duration-300 flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.35)] hover:shadow-[0_0_25px_rgba(245,158,11,0.6)] hover:scale-[1.02] active:scale-[0.98]"
+            title="پلکان اهداف و تسک‌ها (Staircase Todo)"
+          >
+            <TrendingUp className="w-4 h-4 text-amber-200" />
+            <span>پلکان اهداف (Staircase Todo)</span>
+            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+          </button>
+
+          {/* Mind Map Diagram Modal Trigger Button */}
+          <button
+            onClick={() => setIsMindMapOpen(true)}
+            className="px-4 py-2 rounded-2xl bg-gradient-to-r from-fuchsia-600 via-purple-600 to-cyan-600 hover:from-fuchsia-500 hover:to-cyan-500 text-white font-extrabold text-xs transition-all duration-300 flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(217,70,239,0.4)] hover:shadow-[0_0_25px_rgba(6,182,212,0.6)] hover:scale-[1.02] active:scale-[0.98]"
+          >
+            <Network className="w-4 h-4 text-cyan-200" />
+            <span>نقشه ذهنی و دیاگرام (Mind Map Canvas)</span>
+            <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+          </button>
+        </div>
       </div>
 
       {/* Add Task Input */}
@@ -239,9 +267,9 @@ export const TaskList: React.FC<TaskListProps> = React.memo(({
                 )}
 
                 <button
-                  onClick={() => handleDeleteTask(task.id)}
+                  onClick={() => setTaskToDelete(task)}
                   className="p-1 rounded-lg text-fuchsia-400/60 hover:text-rose-400 hover:bg-rose-950/40 transition"
-                  title="Delete"
+                  title="حذف تسک"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>
@@ -263,6 +291,67 @@ export const TaskList: React.FC<TaskListProps> = React.memo(({
         onClose={() => setIsMindMapOpen(false)}
         onSyncTasksToMain={handleSyncFromMindMap}
       />
+
+      {/* Staircase Todo List Modal */}
+      <StaircaseModal
+        isOpen={isStaircaseOpen}
+        onClose={() => setIsStaircaseOpen(false)}
+        onSyncTasksToMain={handleSyncFromStaircase}
+      />
+
+      {/* Delete Task Confirmation Modal */}
+      {taskToDelete && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={() => setTaskToDelete(null)}
+          dir="rtl"
+        >
+          <div
+            className="bg-[#12042b] border-2 border-rose-500/70 rounded-3xl p-6 max-w-sm w-full shadow-[0_0_40px_rgba(244,63,94,0.35)] flex flex-col gap-4 text-right"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 border-b border-fuchsia-900/60 pb-3">
+              <div className="w-10 h-10 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-400 flex items-center justify-center shrink-0 shadow-[0_0_15px_rgba(244,63,94,0.3)]">
+                <Trash2 className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white">حذف تسک</h3>
+                <p className="text-[11px] text-rose-300/80 font-medium mt-0.5">تایید عملیات حذف</p>
+              </div>
+            </div>
+
+            <div className="space-y-2 py-1">
+              <p className="text-xs font-bold text-fuchsia-100 leading-relaxed">
+                می‌خوای حذف بشه این تسک؟
+              </p>
+              <div className="p-3 rounded-xl bg-fuchsia-950/50 border border-fuchsia-800/50 text-xs font-semibold text-cyan-200 break-words leading-relaxed">
+                «{taskToDelete.title}»
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-fuchsia-900/60">
+              <button
+                type="button"
+                onClick={() => setTaskToDelete(null)}
+                className="px-4 py-2 rounded-xl bg-fuchsia-950/80 hover:bg-fuchsia-900 text-fuchsia-200 text-xs font-bold border border-fuchsia-800/60 transition"
+              >
+                انصراف
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  handleDeleteTask(taskToDelete.id);
+                  setTaskToDelete(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-gradient-to-r from-rose-600 to-rose-500 hover:from-rose-500 hover:to-rose-400 text-white text-xs font-black shadow-[0_0_15px_rgba(244,63,94,0.35)] transition flex items-center gap-1.5"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>بله، حذف شود</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 });

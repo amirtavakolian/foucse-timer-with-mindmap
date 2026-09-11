@@ -1,5 +1,5 @@
 import React from 'react';
-import { Monitor, Minus, Square, X, Settings, Moon, Sun, Bell, Volume2, ShieldCheck, HelpCircle } from 'lucide-react';
+import { Monitor, Minus, Square, X, Settings, Moon, Sun, Bell, Volume2, ShieldCheck, HelpCircle, BookOpen } from 'lucide-react';
 import { AppSettings } from '../types';
 import { formatShamsiDate, toPersianDigits } from '../utils/time';
 
@@ -7,6 +7,7 @@ interface WindowsTitleBarProps {
   settings: AppSettings;
   onUpdateSettings: (newSettings: Partial<AppSettings>) => void;
   onOpenSettings: () => void;
+  onOpenNotebook: () => void;
   onOpenPwaGuide: () => void;
   isMinimized: boolean;
   onToggleMinimize: () => void;
@@ -18,6 +19,7 @@ export const WindowsTitleBar: React.FC<WindowsTitleBarProps> = ({
   settings,
   onUpdateSettings,
   onOpenSettings,
+  onOpenNotebook,
   onOpenPwaGuide,
   isMinimized,
   onToggleMinimize,
@@ -49,7 +51,17 @@ export const WindowsTitleBar: React.FC<WindowsTitleBarProps> = ({
       </div>
 
       {/* Middle/Right Quick Action Controls */}
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 sm:gap-2">
+        {/* Notebook Button (دفترچه یادداشت) */}
+        <button
+          onClick={onOpenNotebook}
+          className="flex items-center gap-1.5 text-xs px-2.5 sm:px-3 py-1 rounded-lg bg-gradient-to-r from-purple-900/90 via-fuchsia-950 to-purple-900/90 hover:from-purple-800 hover:to-fuchsia-900 text-fuchsia-200 border border-fuchsia-600/70 font-bold transition shadow-[0_0_12px_rgba(217,70,239,0.25)] active:scale-95 hover:text-white"
+          title="دفترچه یادداشت دیجیتال (ثبت و ذخیره‌سازی دائمی ایده‌ها و نکات)"
+        >
+          <BookOpen className="w-3.5 h-3.5 text-pink-400 shrink-0" />
+          <span className="text-[11px] font-bold">دفترچه یادداشت</span>
+        </button>
+
         {/* Theme Toggle */}
         <button
           onClick={() => onUpdateSettings({ theme: settings.theme === 'dark' ? 'light' : 'dark' })}
