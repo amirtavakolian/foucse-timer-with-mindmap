@@ -176,7 +176,7 @@ export const TimerDisplay: React.FC<TimerDisplayProps> = React.memo(({
   const isGoalReached = totalFocusSecondsToday >= 2 * 3600 || totalFocusSessionsCount >= 4;
 
   return (
-    <div className="flex flex-col items-center justify-between w-full h-full p-6 sm:p-8 rounded-3xl bg-[#0d0221] border border-fuchsia-500/40 shadow-[0_0_25px_rgba(217,70,239,0.12)] transition-all">
+    <div className="flex flex-col items-center w-full p-6 sm:p-8 rounded-3xl bg-[#0d0221] border border-fuchsia-500/40 shadow-[0_0_25px_rgba(217,70,239,0.12)] transition-all">
       {/* Main Circular Countdown Display */}
       <div className="relative flex items-center justify-center my-2 select-none">
         <svg height={radius * 2} width={radius * 2} className="transform -rotate-90">

@@ -113,7 +113,7 @@ export const TaskList: React.FC<TaskListProps> = React.memo(({
           {/* Staircase Todo Modal Trigger Button */}
           <button
             onClick={() => setIsStaircaseOpen(true)}
-            className="px-4 py-2 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-orange-700 hover:from-amber-500 hover:to-orange-600 text-white font-extrabold text-xs transition-all duration-300 flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.35)] hover:shadow-[0_0_25px_rgba(245,158,11,0.6)] hover:scale-[1.02] active:scale-[0.98]"
+            className="px-4 py-2 rounded-2xl bg-gradient-to-r from-amber-600 via-amber-700 to-orange-700 hover:from-amber-500 hover:to-orange-600 text-white font-extrabold text-xs transition-all duration-300 flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(245,158,11,0.35)] hover:shadow-[0_0_25px_rgba(245,158,11,0.6)] hover:scale-[1.02] active:scale-[0.98] staircase-vazir-root"
             title="پلکان اهداف و تسک‌ها (Staircase Todo)"
           >
             <TrendingUp className="w-4 h-4 text-amber-200" />

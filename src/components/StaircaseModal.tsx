@@ -643,7 +643,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
   return (
     /* Full screen container edge-to-edge (100vw × 100vh) */
     <div
-      className="fixed inset-0 z-50 w-screen h-screen bg-[#07050d] flex flex-col overflow-hidden text-neutral-100 transition-all animate-in fade-in duration-150"
+      className="fixed inset-0 z-50 w-screen h-screen bg-[#07050d] flex flex-col overflow-hidden text-neutral-100 transition-all animate-in fade-in duration-150 staircase-vazir-root"
       dir="rtl"
     >
       {/* Top Navigation & Controls Bar */}
