@@ -12,6 +12,8 @@ import {
   Minimize2,
   ChevronRight,
   ChevronLeft,
+  ChevronsLeft,
+  ChevronsRight,
   ArrowUpRight,
   ListTodo,
   Layers,
@@ -21,6 +23,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   ChevronDown,
+  ChevronUp,
   ArrowLeft,
   TrendingUp,
   AlertTriangle,
@@ -29,6 +32,7 @@ import {
   Clock,
   BookOpen,
   Download,
+  Sparkles,
 } from 'lucide-react';
 import { StairStep, StaircaseTodo, StaircaseProject } from '../types';
 import {
@@ -37,7 +41,16 @@ import {
   fetchServerData,
   STAIRCASE_PROJECTS_KEY,
 } from '../utils/storage';
-import { formatShamsiDate, formatHHMM, toPersianDigits } from '../utils/time';
+import {
+  formatShamsiDate,
+  formatHHMM,
+  toPersianDigits,
+  getShamsiDateStack,
+  ShamsiDateStack,
+  getShamsiNumbers,
+  shamsiToIsoString,
+  PERSIAN_MONTH_NAMES,
+} from '../utils/time';
 
 interface StaircaseModalProps {
   isOpen: boolean;
@@ -45,56 +58,14 @@ interface StaircaseModalProps {
   onSyncTasksToMain?: (tasks: string[]) => void;
 }
 
-// Default 5-step template with requested Dark Purple (بنفش دارک) for non-final steps and Golden Summit for the goal
+// Default single-step template with Golden Summit for the goal
 const createDefaultSteps = (): StairStep[] => [
   {
-    id: `step-${Date.now()}-1`,
-    title: 'شروع و برنامه‌ریزی اولیه',
-    color: '#220d3a', // Dark purple
-    createdAt: Date.now() - 3600000 * 24 * 3,
-    todos: [
-      { id: `t1-${Date.now()}-1`, text: 'تعیین اهداف کلیدی و پیش‌نیازها', completed: true, createdAt: Date.now() - 3600000 },
-      { id: `t1-${Date.now()}-2`, text: 'آماده‌سازی محیط و ابزارهای کار', completed: true, createdAt: Date.now() - 1800000 },
-    ],
-  },
-  {
-    id: `step-${Date.now()}-2`,
-    title: 'فاز مقدماتی و آماده‌سازی',
-    color: '#280f45', // Dark purple
-    createdAt: Date.now() - 3600000 * 24 * 2,
-    todos: [
-      { id: `t2-${Date.now()}-1`, text: 'انجام بخش اول تسک‌های پایه‌ای', completed: true, createdAt: Date.now() - 900000 },
-      { id: `t2-${Date.now()}-2`, text: 'بررسی کیفیت و رفع موانع اولیه', completed: false, createdAt: Date.now() },
-    ],
-  },
-  {
-    id: `step-${Date.now()}-3`,
-    title: 'توسعه عمیق و تمرکز بالا',
-    color: '#2e1250', // Dark purple
-    createdAt: Date.now() - 3600000 * 24,
-    todos: [
-      { id: `t3-${Date.now()}-1`, text: 'اجرای هسته اصلی پروژه و قابلیت‌ها', completed: false, createdAt: Date.now() },
-      { id: `t3-${Date.now()}-2`, text: 'تمرین و مرور تسک‌های میانی', completed: false, createdAt: Date.now() },
-    ],
-  },
-  {
-    id: `step-${Date.now()}-4`,
-    title: 'تست، بهینه‌سازی و پالایش',
-    color: '#36155c', // Dark purple
-    createdAt: Date.now() - 3600000 * 4,
-    todos: [
-      { id: `t4-${Date.now()}-1`, text: 'بررسی نهایی، تست و رفع ایرادات', completed: false, createdAt: Date.now() },
-      { id: `t4-${Date.now()}-2`, text: 'آماده‌سازی برای فاز تحویل نهایی', completed: false, createdAt: Date.now() },
-    ],
-  },
-  {
-    id: `step-${Date.now()}-5`,
-    title: 'هدف نهایی و پیروزی',
+    id: `step-${Date.now()}-goal`,
+    title: 'هدف نهایی',
     color: '#78350f', // EXACT Golden summit preserved
-    createdAt: Date.now(),
-    todos: [
-      { id: `t5-${Date.now()}-1`, text: 'دستیابی کامل به نتیجه مطلوب و جشن موفقیت', completed: false, createdAt: Date.now() },
-    ],
+    createdAt: new Date().getTime(),
+    todos: [],
   },
 ];
 
@@ -195,11 +166,34 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
   const [newTodoText, setNewTodoText] = useState('');
   const [editingTitleStepId, setEditingTitleStepId] = useState<string | null>(null);
   const [tempStepTitle, setTempStepTitle] = useState('');
+  const [editingTodoId, setEditingTodoId] = useState<string | null>(null);
+  const [tempTodoText, setTempTodoText] = useState('');
+  const [editingProjectId, setEditingProjectId] = useState<string | null>(null);
   const [isEditingProjectTitle, setIsEditingProjectTitle] = useState(false);
   const [tempProjectTitle, setTempProjectTitle] = useState('');
   const [isProjectDropdownOpen, setIsProjectDropdownOpen] = useState(false);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [isBrowserFullscreen, setIsBrowserFullscreen] = useState(false);
+  const [minimizedProjectIds, setMinimizedProjectIds] = useState<Record<string, boolean>>({});
+
+  const toggleMinimizeProject = (projectId: string) => {
+    setMinimizedProjectIds((prev) => ({
+      ...prev,
+      [projectId]: !prev[projectId],
+    }));
+  };
+
+  const handleMinimizeAll = () => {
+    const allMinimized: Record<string, boolean> = {};
+    projects.forEach((p) => {
+      allMinimized[p.id] = true;
+    });
+    setMinimizedProjectIds(allMinimized);
+  };
+
+  const handleExpandAll = () => {
+    setMinimizedProjectIds({});
+  };
 
   // Deletion Confirmation Modal State
   const [deleteConfirmation, setDeleteConfirmation] = useState<{
@@ -219,6 +213,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
   const [warningNotice, setWarningNotice] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const stepScrollRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Auto-save projects to storage (both localStorage and server file) whenever updated
   useEffect(() => {
@@ -302,37 +297,85 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     }
   };
 
-  // Horizontal scroll helpers
+  // Horizontal scroll helpers (scrolls the active staircase steps directly)
   const handleScrollLeft = () => {
+    const activeEl = stepScrollRefs.current[activeProjectId];
+    if (activeEl) {
+      activeEl.scrollBy({ left: -320, behavior: 'smooth' });
+    }
     if (containerRef.current) {
-      containerRef.current.scrollBy({ left: -300, behavior: 'smooth' });
+      containerRef.current.scrollBy({ left: -320, behavior: 'smooth' });
     }
   };
 
   const handleScrollRight = () => {
+    const activeEl = stepScrollRefs.current[activeProjectId];
+    if (activeEl) {
+      activeEl.scrollBy({ left: 320, behavior: 'smooth' });
+    }
     if (containerRef.current) {
-      containerRef.current.scrollBy({ left: 300, behavior: 'smooth' });
+      containerRef.current.scrollBy({ left: 320, behavior: 'smooth' });
+    }
+  };
+
+  const handleScrollToStart = () => {
+    const activeEl = stepScrollRefs.current[activeProjectId];
+    if (activeEl) {
+      activeEl.scrollTo({ left: 0, behavior: 'smooth' });
+    }
+    if (containerRef.current) {
+      containerRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleScrollToEnd = () => {
+    const activeEl = stepScrollRefs.current[activeProjectId];
+    if (activeEl) {
+      activeEl.scrollTo({ left: activeEl.scrollWidth, behavior: 'smooth' });
     }
   };
 
   // Project Management (Multiple Staircases)
+  // When creating a new staircase, insert it directly UNDER the current active staircase
   const handleCreateNewProject = () => {
     const newProjectId = `staircase-${Date.now()}`;
     const newProjectNum = projects.length + 1;
+    const newSteps = createDefaultSteps();
     const newProject: StaircaseProject = {
       id: newProjectId,
       title: `پلکان هدف ${newProjectNum}`,
       createdAt: Date.now(),
-      steps: createDefaultSteps(),
+      steps: newSteps,
       notes: '',
     };
 
-    const updated = [newProject, ...projects];
+    // Insert directly UNDER the currently active project
+    const activeIndex = projects.findIndex((p) => p.id === activeProjectId);
+    let updated: StaircaseProject[];
+    if (activeIndex !== -1) {
+      updated = [
+        ...projects.slice(0, activeIndex + 1),
+        newProject,
+        ...projects.slice(activeIndex + 1),
+      ];
+    } else {
+      updated = [...projects, newProject];
+    }
+
     setProjects(updated);
     setActiveProjectId(newProjectId);
     setViewMode('staircase');
-    setSelectedStepId(newProject.steps[newProject.steps.length - 1].id);
+    setSelectedStepId(newSteps[newSteps.length - 1].id);
+    setIsSidebarOpen(true);
     setIsProjectDropdownOpen(false);
+
+    // Smooth scroll down to the newly created staircase below
+    setTimeout(() => {
+      const el = document.getElementById(`staircase-section-${newProjectId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 120);
   };
 
   // Handlers for Right Sliding Notebook Drawer (یادداشت‌های اختصاصی پلکان)
@@ -400,12 +443,12 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
   };
 
   const promptRemoveStep = (stepIdToRemove?: string) => {
-    if (steps.length <= 2) {
-      setWarningNotice('حداقل ۲ پله (پله شروع و پله هدف) باید در پلکان باقی بماند.');
+    if (steps.length <= 1) {
+      setWarningNotice('حداقل ۱ پله (پله هدف) باید در پلکان باقی بماند.');
       return;
     }
 
-    const targetId = stepIdToRemove || selectedStepId || steps[steps.length - 2]?.id;
+    const targetId = stepIdToRemove || selectedStepId || (steps.length >= 2 ? steps[steps.length - 2]?.id : undefined);
     const targetStep = steps.find((s) => s.id === targetId);
     if (!targetStep) return;
 
@@ -494,40 +537,198 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
       })),
     };
 
-    setProjects([duplicated, ...projects]);
+    // Insert right below the duplicated project
+    const projIndex = projects.findIndex((p) => p.id === proj.id);
+    let updated: StaircaseProject[];
+    if (projIndex !== -1) {
+      updated = [
+        ...projects.slice(0, projIndex + 1),
+        duplicated,
+        ...projects.slice(projIndex + 1),
+      ];
+    } else {
+      updated = [...projects, duplicated];
+    }
+
+    setProjects(updated);
     setActiveProjectId(dupId);
     setViewMode('staircase');
+    setSelectedStepId(duplicated.steps[duplicated.steps.length - 1].id);
+    setIsSidebarOpen(true);
+
+    setTimeout(() => {
+      const el = document.getElementById(`staircase-section-${dupId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }, 120);
   };
 
-  const handleSaveProjectTitle = () => {
+  const handleSaveProjectTitle = (targetId?: string) => {
+    const pId = targetId || activeProjectId;
     const clean = tempProjectTitle.trim() || 'پلکان بدون عنوان';
-    const updated = projects.map((p) => (p.id === activeProjectId ? { ...p, title: clean } : p));
+    const updated = projects.map((p) => (p.id === pId ? { ...p, title: clean } : p));
     setProjects(updated);
     setIsEditingProjectTitle(false);
+    setEditingProjectId(null);
+  };
+
+  // Helper to sort regular steps chronologically while keeping the Golden Goal (last step) at the summit
+  const sortStepsChronologically = (stepsToSort: StairStep[], proj: StaircaseProject): StairStep[] => {
+    if (stepsToSort.length <= 2) return stepsToSort;
+
+    // The last step is always the summit / Golden Goal
+    const summitStep = stepsToSort[stepsToSort.length - 1];
+    const regularSteps = stepsToSort.slice(0, stepsToSort.length - 1);
+
+    // Compute effective timestamp for each regular step using its customDate or assigned index
+    const withTimes = regularSteps.map((s, idx) => {
+      let time = 0;
+      if (s.customDate) {
+        const parts = s.customDate.split('-');
+        if (parts.length === 3) {
+          time = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0).getTime();
+        } else {
+          time = new Date(s.customDate).getTime();
+        }
+      }
+      if (!time || isNaN(time)) {
+        // Fall back to getStepDateObj calculation
+        time = getStepDateObj(s, idx, proj).getTime();
+      }
+      return { step: s, time, originalIndex: idx };
+    });
+
+    // Sort stably by date
+    withTimes.sort((a, b) => {
+      if (a.time !== b.time) return a.time - b.time;
+      return a.originalIndex - b.originalIndex;
+    });
+
+    return [...withTimes.map((item) => item.step), summitStep];
   };
 
   // Update steps within active project
   const updateActiveSteps = (newSteps: StairStep[]) => {
     const updated = projects.map((p) => {
       if (p.id === activeProjectId) {
-        return { ...p, steps: newSteps };
+        const sorted = sortStepsChronologically(newSteps, p);
+        return { ...p, steps: sorted };
       }
       return p;
     });
     setProjects(updated);
   };
 
-  // Add Step (Default color is dark purple; inserts right before the golden summit)
-  const handleAddStep = () => {
+  // Resolves the normalized JavaScript Date object for any step in a project
+  const getStepDateObj = (step: StairStep, stepIdx: number, proj: StaircaseProject): Date => {
+    if (step.customDate) {
+      const parts = step.customDate.split('-');
+      if (parts.length === 3) {
+        return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0);
+      }
+      const parsed = new Date(step.customDate);
+      if (!isNaN(parsed.getTime())) {
+        parsed.setHours(12, 0, 0, 0);
+        return parsed;
+      }
+    }
+
+    let baseDate: Date;
+    if (proj.steps[0]?.customDate) {
+      const parts = proj.steps[0].customDate.split('-');
+      if (parts.length === 3) {
+        baseDate = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0);
+      } else {
+        baseDate = new Date(proj.steps[0].customDate);
+      }
+    } else if (proj.steps[0]?.createdAt) {
+      baseDate = new Date(proj.steps[0].createdAt);
+    } else if (proj.createdAt) {
+      baseDate = new Date(proj.createdAt);
+    } else {
+      baseDate = new Date('2026-09-11T12:00:00Z');
+    }
+
+    const d = new Date(baseDate);
+    d.setHours(12, 0, 0, 0);
+    d.setDate(d.getDate() + stepIdx);
+    return d;
+  };
+
+  // Formats Shamsi date stack info (سال / روز / ماه)
+  const getStepDateInfo = (step: StairStep, stepIdx: number, proj: StaircaseProject): ShamsiDateStack => {
+    const d = getStepDateObj(step, stepIdx, proj);
+    return getShamsiDateStack(d);
+  };
+
+  // Calculates list of missing calendar days between two dates
+  const getMissingDaysBetween = (
+    prevDateObj: Date,
+    currDateObj: Date
+  ): Array<{ dateObj: Date; dateInfo: ShamsiDateStack; isoStr: string }> => {
+    const missing: Array<{ dateObj: Date; dateInfo: ShamsiDateStack; isoStr: string }> = [];
+    const tPrev = new Date(prevDateObj.getFullYear(), prevDateObj.getMonth(), prevDateObj.getDate(), 12, 0, 0).getTime();
+    const tCurr = new Date(currDateObj.getFullYear(), currDateObj.getMonth(), currDateObj.getDate(), 12, 0, 0).getTime();
+
+    const diffDays = Math.round((tCurr - tPrev) / (1000 * 60 * 60 * 24));
+    if (diffDays > 1) {
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      for (let i = 1; i < diffDays; i++) {
+        const gapDate = new Date(prevDateObj);
+        gapDate.setDate(gapDate.getDate() + i);
+        gapDate.setHours(12, 0, 0, 0);
+        const isoStr = `${gapDate.getFullYear()}-${pad(gapDate.getMonth() + 1)}-${pad(gapDate.getDate())}`;
+        missing.push({
+          dateObj: gapDate,
+          dateInfo: getShamsiDateStack(gapDate),
+          isoStr,
+        });
+      }
+    }
+    return missing;
+  };
+
+  // Add Step to any specific project or active project
+  const handleAddStepForProject = (projectId: string, customDateIso?: string) => {
+    setActiveProjectId(projectId);
+    const targetProj = projects.find((p) => p.id === projectId);
+    if (!targetProj) return;
+    const pSteps = targetProj.steps;
     const newStepId = `step-${Date.now()}`;
-    const newStepNum = totalSteps;
+    const newStepNum = pSteps.length <= 1 ? 1 : pSteps.length;
     const now = Date.now();
+
+    // Determine date for new step:
+    // If customDateIso is given, use it.
+    // Otherwise, default to 1 day after the previous step (pSteps[pSteps.length - 2]),
+    // or if only summit exists, 1 day before summit
+    let assignedDateIso: string | undefined = customDateIso;
+    if (!assignedDateIso) {
+      const prevStepIdx = pSteps.length - 2; // last regular step before summit
+      if (prevStepIdx >= 0) {
+        const prevStep = pSteps[prevStepIdx];
+        const prevDateObj = getStepDateObj(prevStep, prevStepIdx, targetProj);
+        const nextDay = new Date(prevDateObj);
+        nextDay.setDate(nextDay.getDate() + 1);
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        assignedDateIso = `${nextDay.getFullYear()}-${pad(nextDay.getMonth() + 1)}-${pad(nextDay.getDate())}`;
+      } else {
+        // Only 1 step (summit) exists
+        const summitDateObj = getStepDateObj(pSteps[0], 0, targetProj);
+        const prevDay = new Date(summitDateObj);
+        prevDay.setDate(prevDay.getDate() - 1);
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        assignedDateIso = `${prevDay.getFullYear()}-${pad(prevDay.getMonth() + 1)}-${pad(prevDay.getDate())}`;
+      }
+    }
 
     const newStep: StairStep = {
       id: newStepId,
       title: `مرحله ${newStepNum}: گام جدید`,
       color: '#280f45', // Dark purple
       createdAt: now,
+      customDate: assignedDateIso,
       todos: [
         {
           id: `todo-${now}`,
@@ -538,12 +739,32 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
       ],
     };
 
-    // Insert before the last (goal) step so the summit always stays the Golden Goal
-    const updated = [...steps];
-    updated.splice(totalSteps - 1, 0, newStep);
-    updateActiveSteps(updated);
+    // Insert new step and sort chronologically before the golden summit
+    const withNewStep = [...pSteps.slice(0, pSteps.length - 1), newStep, pSteps[pSteps.length - 1]];
+    const updated = sortStepsChronologically(withNewStep, targetProj);
+
+    setProjects((prev) =>
+      prev.map((p) => (p.id === projectId ? { ...p, steps: updated } : p))
+    );
     setSelectedStepId(newStepId);
     setIsSidebarOpen(true);
+
+    setTimeout(() => {
+      const el = document.getElementById(`step-pillar-${newStepId}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+      } else {
+        const scrollContainer = stepScrollRefs.current[projectId];
+        if (scrollContainer) {
+          scrollContainer.scrollBy({ left: 300, behavior: 'smooth' });
+        }
+      }
+    }, 100);
+  };
+
+  // Add Step immediately to active project
+  const handleAddStep = () => {
+    handleAddStepForProject(activeProjectId);
   };
 
   // Remove Step (always prompts confirmation)
@@ -599,13 +820,47 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     }
   };
 
+  // Edit Todo
+  const handleStartEditTodo = (todo: StaircaseTodo) => {
+    setEditingTodoId(todo.id);
+    setTempTodoText(todo.text);
+  };
+
+  const handleSaveEditTodo = () => {
+    if (!editingTodoId || !selectedStep) return;
+    const trimmed = tempTodoText.trim();
+    if (!trimmed) {
+      setEditingTodoId(null);
+      return;
+    }
+    const updated = steps.map((s) => {
+      if (s.id === selectedStep.id) {
+        return {
+          ...s,
+          todos: s.todos.map((t) => (t.id === editingTodoId ? { ...t, text: trimmed } : t)),
+        };
+      }
+      return s;
+    });
+    updateActiveSteps(updated);
+    setEditingTodoId(null);
+  };
+
+  const handleCancelEditTodo = () => {
+    setEditingTodoId(null);
+    setTempTodoText('');
+  };
+
   const handleChangeStepColor = (color: string) => {
     if (!selectedStep || isGoalStep) return; // Last step remains permanently golden
     const updated = steps.map((s) => (s.id === selectedStep.id ? { ...s, color } : s));
     updateActiveSteps(updated);
   };
 
-  const handleStartEditTitle = (step: StairStep) => {
+  const handleStartEditTitle = (step: StairStep, projectId?: string) => {
+    if (projectId && projectId !== activeProjectId) {
+      setActiveProjectId(projectId);
+    }
     setEditingTitleStepId(step.id);
     setTempStepTitle(step.title);
   };
@@ -629,6 +884,12 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     onSyncTasksToMain(uncompletedTasks);
     setSyncNotice(`${uncompletedTasks.length} تسک به چک‌لیست فوکوس منتقل شد.`);
     setTimeout(() => setSyncNotice(null), 3500);
+  };
+
+  const handleUpdateStepDate = (stepId: string, newDateIso: string) => {
+    if (!newDateIso) return;
+    const updated = steps.map((s) => (s.id === stepId ? { ...s, customDate: newDateIso } : s));
+    updateActiveSteps(updated);
   };
 
   // Dimensions & Calculations
@@ -841,9 +1102,9 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
 
                 <button
                   onClick={() => handleRemoveStep()}
-                  disabled={steps.length <= 2}
+                  disabled={steps.length <= 1}
                   className={`px-2.5 py-1.5 rounded-lg border text-xs font-bold transition flex items-center gap-1 active:scale-95 ${
-                    steps.length <= 2
+                    steps.length <= 1
                       ? 'bg-neutral-800/40 text-neutral-500 border-neutral-800 cursor-not-allowed'
                       : 'bg-rose-950/30 hover:bg-rose-900/40 text-rose-300 hover:text-rose-200 border-rose-800/40'
                   }`}
@@ -1020,7 +1281,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                     <div className="my-6 h-28 flex items-end justify-center gap-1.5 px-3 py-2 bg-black/50 rounded-2xl border border-purple-950/60 pointer-events-none" dir="ltr">
                       {projSteps.map((s, idx) => {
                         const isSummit = idx === projSteps.length - 1;
-                        const h = 25 + (idx / Math.max(1, projSteps.length - 1)) * 65;
+                        const h = projSteps.length <= 1 ? 65 : 25 + (idx / Math.max(1, projSteps.length - 1)) * 65;
                         const purpleTone = s.color || '#280f45';
                         return (
                           <div
@@ -1083,10 +1344,10 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
       ) : (
         /* VIEW 2: INTERACTIVE STAIRCASE CANVAS & TASK LIST */
         <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
-          {/* Staircase Canvas Container */}
+          {/* Staircase Canvas Container with Vertical Scrolling */}
           <div
             ref={containerRef}
-            className="flex-1 relative bg-[#07050d] overflow-x-auto overflow-y-auto custom-scrollbar select-none flex flex-col justify-end"
+            className="flex-1 relative bg-[#07050d] overflow-x-auto overflow-y-auto custom-scrollbar select-none flex flex-col items-center py-10 px-4 sm:px-8 gap-14 scroll-smooth"
             style={{
               backgroundImage: 'radial-gradient(circle at 50% 15%, rgba(68, 20, 110, 0.25) 0%, transparent 80%)',
             }}
@@ -1103,7 +1364,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
             {!isSidebarOpen && (
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className="absolute top-4 left-4 z-30 px-3.5 py-2 rounded-2xl bg-[#150d24]/95 hover:bg-[#201438] border border-amber-500/60 text-amber-300 text-xs font-bold flex items-center gap-2 shadow-[0_4px_25px_rgba(0,0,0,0.6)] transition backdrop-blur-md active:scale-95"
+                className="fixed top-20 left-4 z-30 px-3.5 py-2 rounded-2xl bg-[#150d24]/95 hover:bg-[#201438] border border-amber-500/60 text-amber-300 text-xs font-bold flex items-center gap-2 shadow-[0_4px_25px_rgba(0,0,0,0.6)] transition backdrop-blur-md active:scale-95"
                 title="نمایش منوی تسک‌ها"
                 dir="rtl"
               >
@@ -1118,180 +1379,735 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
             )}
 
             {/* Horizontal Scroll Navigation Float Controls */}
-            <div className="absolute bottom-4 left-4 z-30 flex items-center gap-1.5 bg-[#150d24]/90 border border-purple-900/50 rounded-2xl p-1 shadow-2xl backdrop-blur-md">
+            <div className="fixed bottom-4 left-4 z-30 flex items-center gap-1 bg-[#150d24]/95 border border-purple-900/60 rounded-2xl p-1 shadow-2xl backdrop-blur-md">
+              <button
+                onClick={handleScrollToStart}
+                className="p-2 rounded-xl hover:bg-purple-900/60 text-neutral-400 hover:text-amber-300 transition active:scale-95"
+                title="پرش به شروع پلکان (پله اول)"
+              >
+                <ChevronsLeft className="w-4 h-4" />
+              </button>
               <button
                 onClick={handleScrollLeft}
-                className="p-2 rounded-xl hover:bg-purple-900/50 text-neutral-300 hover:text-white transition active:scale-95"
+                className="p-2 rounded-xl hover:bg-purple-900/60 text-neutral-300 hover:text-white transition active:scale-95"
                 title="اسکرول به چپ"
               >
                 <ChevronLeft className="w-4 h-4" />
               </button>
-              <span className="text-[10px] font-mono text-purple-300 px-1">اسکرول افقی</span>
+              <span className="text-[10px] font-mono text-purple-300 px-1 select-none">اسکرول پله‌ها</span>
               <button
                 onClick={handleScrollRight}
-                className="p-2 rounded-xl hover:bg-purple-900/50 text-neutral-300 hover:text-white transition active:scale-95"
+                className="p-2 rounded-xl hover:bg-purple-900/60 text-neutral-300 hover:text-white transition active:scale-95"
                 title="اسکرول به راست"
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
+              <button
+                onClick={handleScrollToEnd}
+                className="p-2 rounded-xl hover:bg-purple-900/60 text-neutral-400 hover:text-amber-300 transition active:scale-95"
+                title="پرش به انتهای پلکان (هدف نهایی)"
+              >
+                <ChevronsRight className="w-4 h-4" />
+              </button>
             </div>
 
-            {/* Central Staircase Wrapper - Using min-w-full w-max with generous padding to ensure 100% full visibility without clipping */}
-            <div className="min-w-full w-max min-h-full flex flex-col justify-end items-center px-28 sm:px-36 py-14 m-auto">
+            {/* Multi-Staircase Global Toolbar (When more than 1 staircase exists) */}
+            {projects.length > 1 && (
               <div
-                style={{
-                  transform: `scale(${scale})`,
-                  transformOrigin: 'bottom center',
-                  transition: 'transform 0.15s ease-out',
-                }}
-                className="py-12"
+                className="w-full max-w-6xl flex items-center justify-between px-4 py-2.5 rounded-2xl bg-[#140b26]/90 border border-purple-900/50 backdrop-blur-md shadow-lg"
+                dir="rtl"
               >
-                {/* Ascending Steps Flex Container */}
-                <div className="flex items-end shadow-2xl relative" dir="ltr">
-                  {steps.map((step, idx) => {
-                    const isLast = idx === totalSteps - 1;
-                    const isFirst = idx === 0;
-                    const isSelected = step.id === selectedStep?.id;
-
-                    // Linear ascend from minStepHeight to maxStepHeight
-                    const height =
-                      minStepHeight +
-                      (idx / Math.max(1, totalSteps - 1)) * (maxStepHeight - minStepHeight);
-
-                    // STRICT RULE: Last step is ALWAYS Golden!
-                    // All other steps are DARK PURPLE (بنفش دارک)
-                    const darkPurpleColor = step.color || '#280f45';
-
-                    const completedTodos = step.todos.filter((t) => t.completed).length;
-                    const totalTodos = step.todos.length;
-                    const isStepAllDone = totalTodos > 0 && completedTodos === totalTodos;
-
-                    return (
-                      <div
-                        key={step.id}
-                        className="relative flex flex-col items-center justify-end group"
-                        style={{ width: `${stepWidth}px` }}
-                      >
-                        {/* LABEL STRICTLY ABOVE STEP (No text inside body as requested) */}
-                        <div className="absolute bottom-full mb-3 flex flex-col items-center z-20 pointer-events-auto">
-                          {isLast ? (
-                            /* Golden Summit: Radiant sun and Goal label */
-                            <div
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleStartEditTitle(step);
-                              }}
-                              className="flex flex-col items-center mb-1 cursor-pointer transition-transform hover:scale-105"
-                              title="کلیک برای ویرایش عنوان هدف"
-                            >
-                              {/* Bold Glowing "هدف" Title */}
-                              <span className="text-sm sm:text-base font-black text-amber-100 tracking-wider drop-shadow-[0_0_12px_rgba(245,158,11,0.8)] mb-1 text-center max-w-[130px] truncate">
-                                {step.title === 'هدف نهایی و پیروزی' || step.title === 'هدف'
-                                  ? 'هدف'
-                                  : step.title}
-                              </span>
-
-                              {/* Glowing Sun with Radiating Rays */}
-                              <div className="relative w-10 h-10 flex items-center justify-center my-0.5">
-                                <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-[#e59733] to-[#ffd074] border-2 border-[#fff0c0] shadow-[0_0_20px_#f59e0b]" />
-                                <div className="absolute -top-1.5 w-0.5 h-3 bg-[#ffd074] rounded-full shadow-[0_0_4px_#f59e0b]" />
-                                <div className="absolute -top-1 -right-1 w-0.5 h-3 bg-[#ffd074] rotate-45 rounded-full origin-bottom" />
-                                <div className="absolute -top-1 -left-1 w-0.5 h-3 bg-[#ffd074] -rotate-45 rounded-full origin-bottom" />
-                                <div className="absolute -right-1.5 w-3 h-0.5 bg-[#ffd074] rounded-full shadow-[0_0_4px_#f59e0b]" />
-                                <div className="absolute -left-1.5 w-3 h-0.5 bg-[#ffd074] rounded-full shadow-[0_0_4px_#f59e0b]" />
-                              </div>
-                            </div>
-                          ) : (
-                            /* Standard Step Label Above Pillar */
-                            <div
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleStartEditTitle(step);
-                              }}
-                              className={`px-2.5 py-1 rounded-xl text-center cursor-pointer transition-all max-w-[135px] ${
-                                isSelected
-                                  ? 'bg-[#1f1035] text-amber-300 font-extrabold border border-amber-500/60 shadow-lg scale-105'
-                                  : 'bg-black/75 hover:bg-[#1f1035] text-purple-200 font-bold border border-purple-900/60 hover:text-white'
-                              }`}
-                              title="برای ویرایش نام مرحله کلیک کنید"
-                            >
-                              <span className="text-[11px] leading-tight line-clamp-2 block" dir="rtl">
-                                {step.title}
-                              </span>
-                              {totalTodos > 0 && (
-                                <span
-                                  className={`text-[9px] mt-0.5 block font-mono ${
-                                    isStepAllDone ? 'text-emerald-400 font-bold' : 'text-neutral-400'
-                                  }`}
-                                >
-                                  {isStepAllDone ? '✓ تکمیل' : `${completedTodos}/${totalTodos}`}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-
-                        {/* STEP BODY PILLAR (NO TEXT on body; completely polished) */}
-                        <div
-                          onClick={() => {
-                            setSelectedStepId(step.id);
-                            setIsSidebarOpen(true);
-                          }}
-                          className={`relative w-full cursor-pointer transition-all duration-300 ease-out border-t border-l border-r ${
-                            isLast
-                              ? 'border-[#f59e0b] shadow-[0_0_40px_rgba(245,158,11,0.55)]'
-                              : 'border-[#6b21a8]/45'
-                          } ${
-                            isSelected
-                              ? 'ring-2 ring-amber-400 shadow-[0_0_35px_rgba(245,158,11,0.6)] z-10 brightness-125 scale-[1.01]'
-                              : 'hover:brightness-115 hover:shadow-[0_0_20px_rgba(107,33,168,0.35)] z-0'
-                          }`}
-                          style={{
-                            height: `${height}px`,
-                            backgroundColor: isLast ? undefined : darkPurpleColor,
-                            background: isLast
-                              ? 'linear-gradient(180deg, #f59e0b 0%, #d97706 40%, #78350f 100%)'
-                              : `linear-gradient(180deg, ${darkPurpleColor} 0%, #150726 100%)`,
-                            boxShadow: isLast
-                              ? '0 0 35px rgba(245, 158, 11, 0.5), inset 0 2px 4px rgba(255,255,255,0.4)'
-                              : isSelected
-                              ? 'inset 0 1px 0 rgba(255,255,255,0.25), 0 0 25px rgba(168, 85, 247, 0.45)'
-                              : 'inset 0 1px 0 rgba(255,255,255,0.15)',
-                          }}
-                        >
-                          {/* Inner top highlight line for 3D pillar realism */}
-                          <div className="absolute top-0 inset-x-0 h-1.5 bg-white/20" />
-
-                          {/* Completed tasks progress atmospheric glow inside pillar */}
-                          {totalTodos > 0 && !isLast && (
-                            <div
-                              className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-fuchsia-600/30 to-transparent pointer-events-none transition-all"
-                              style={{
-                                height: `${(completedTodos / totalTodos) * 100}%`,
-                              }}
-                            />
-                          )}
-                        </div>
-
-                        {/* "شروع" label beneath the first step */}
-                        {isFirst && (
-                          <div className="absolute top-full mt-3 text-center pointer-events-none">
-                            <span className="text-xs font-bold text-neutral-400 tracking-wider">
-                              شروع
-                            </span>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
+                <div className="flex items-center gap-2.5">
+                  <Layers className="w-4 h-4 text-amber-400" />
+                  <span className="text-xs font-bold text-neutral-200">
+                    پلکان‌های هدف ({projects.length} پلکان)
+                  </span>
+                  <span className="text-[11px] text-neutral-400 hidden sm:inline">
+                    می‌توانید هر پلکان را برای مشاهده فشرده کوچک (Minimize) کنید
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleMinimizeAll}
+                    className="px-3 py-1.5 rounded-xl bg-purple-950/60 hover:bg-purple-900/80 border border-purple-800/50 text-neutral-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-95"
+                    title="کوچک کردن تمام پلکان‌ها (Minimize All)"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span>بستن همه</span>
+                  </button>
+                  <button
+                    onClick={handleExpandAll}
+                    className="px-3 py-1.5 rounded-xl bg-purple-950/60 hover:bg-purple-900/80 border border-purple-800/50 text-neutral-300 hover:text-white text-xs font-semibold flex items-center gap-1.5 transition active:scale-95"
+                    title="باز کردن تمام پلکان‌ها (Expand All)"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5 text-amber-400" />
+                    <span>باز کردن همه</span>
+                  </button>
                 </div>
               </div>
-            </div>
+            )}
+
+            {/* Stack of All Staircases Vertically (یک پلکان زیر پلکان قبلی) */}
+            {projects.map((proj, projIndex) => {
+              const isThisProjActive = proj.id === activeProjectId;
+              const isMinimized = !!minimizedProjectIds[proj.id];
+              const projSteps = proj.steps;
+              const projTotalSteps = projSteps.length;
+              const projTodos = projSteps.flatMap((s) => s.todos);
+              const projDoneCount = projTodos.filter((t) => t.completed).length;
+
+              return (
+                <React.Fragment key={proj.id}>
+                  {/* Staircase Card Section */}
+                  <div
+                    id={`staircase-section-${proj.id}`}
+                    onClick={() => {
+                      if (activeProjectId !== proj.id) {
+                        setActiveProjectId(proj.id);
+                        setSelectedStepId(projSteps[projSteps.length - 1].id);
+                        setIsSidebarOpen(true);
+                      }
+                    }}
+                    className={`w-full max-w-6xl rounded-3xl transition-all duration-300 relative border flex flex-col items-center ${
+                      isMinimized ? 'p-4 sm:p-5' : 'p-5 sm:p-7'
+                    } ${
+                      isThisProjActive
+                        ? 'bg-[#120822]/90 border-amber-500/50 shadow-[0_0_35px_rgba(245,158,11,0.18)] ring-1 ring-amber-400/35'
+                        : 'bg-[#0b0517]/75 border-purple-950/70 hover:border-purple-800/60 hover:bg-[#100720]/75 cursor-pointer shadow-lg'
+                    }`}
+                  >
+                    {/* Staircase Card Header Bar */}
+                    <div
+                      className={`w-full flex items-center justify-between border-b border-purple-900/40 flex-wrap gap-3 ${
+                        isMinimized ? 'pb-2.5 mb-1' : 'pb-3.5 mb-6'
+                      }`}
+                      dir="rtl"
+                    >
+                      {/* Right: Title & Active Status */}
+                      <div className="flex items-center gap-3">
+                        <span className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/30">
+                          <Trophy className="w-4 h-4" />
+                        </span>
+
+                        {editingProjectId === proj.id ? (
+                          <div
+                            className="flex items-center gap-1.5"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="text"
+                              value={tempProjectTitle}
+                              onChange={(e) => setTempProjectTitle(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleSaveProjectTitle(proj.id)}
+                              autoFocus
+                              className="px-2.5 py-1 rounded-xl bg-neutral-900 border border-amber-500 text-sm font-bold text-white outline-none w-44 sm:w-60"
+                            />
+                            <button
+                              onClick={() => handleSaveProjectTitle(proj.id)}
+                              className="px-2.5 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold transition"
+                            >
+                              ذخیره
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 group/title">
+                            <h2 className="text-base sm:text-lg font-black text-white group-hover/title:text-amber-300 transition">
+                              {proj.title}
+                            </h2>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActiveProjectId(proj.id);
+                                setEditingProjectId(proj.id);
+                                setTempProjectTitle(proj.title);
+                              }}
+                              className="p-1 rounded-lg text-neutral-400 hover:text-amber-400 opacity-0 group-hover/title:opacity-100 hover:bg-purple-950/50 transition"
+                              title="ویرایش نام پلکان"
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+
+                        {/* Active Badge / Select Button */}
+                        {isThisProjActive ? (
+                          <span className="px-3 py-1 rounded-full text-xs font-bold bg-amber-500/20 text-amber-300 border border-amber-500/40 flex items-center gap-1.5 shadow-[0_0_12px_rgba(245,158,11,0.25)]">
+                            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                            <span>پلکان فعال (منوی سمت چپ)</span>
+                          </span>
+                        ) : (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveProjectId(proj.id);
+                              setSelectedStepId(projSteps[projSteps.length - 1].id);
+                              setIsSidebarOpen(true);
+                            }}
+                            className="px-3 py-1 rounded-full text-xs font-semibold bg-purple-950/50 hover:bg-purple-900/70 text-purple-300 hover:text-white border border-purple-800/40 transition"
+                          >
+                            کلیک برای انتخاب در منوی چپ
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Left: Controls & Stats */}
+                      <div className="flex items-center gap-2">
+                        {/* Scroll controls for this staircase if steps are wide */}
+                        {projTotalSteps > 4 && !isMinimized && (
+                          <div className="flex items-center gap-0.5 bg-purple-950/50 p-0.5 rounded-xl border border-purple-900/50" dir="ltr">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                stepScrollRefs.current[proj.id]?.scrollBy({ left: -260, behavior: 'smooth' });
+                              }}
+                              className="p-1 rounded-lg hover:bg-purple-900/70 text-purple-300 hover:text-amber-300 transition active:scale-95"
+                              title="اسکرول به پله‌های شروع (سمت چپ)"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                stepScrollRefs.current[proj.id]?.scrollBy({ left: 260, behavior: 'smooth' });
+                              }}
+                              className="p-1 rounded-lg hover:bg-purple-900/70 text-purple-300 hover:text-amber-300 transition active:scale-95"
+                              title="اسکرول به سمت هدف (سمت راست)"
+                            >
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
+                        <span className="text-xs text-neutral-400 bg-purple-950/40 px-2.5 py-1 rounded-lg border border-purple-900/40 font-mono">
+                          {projTotalSteps} پله • {projDoneCount} از {projTodos.length} تسک
+                        </span>
+
+                        {/* Add Step Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleAddStepForProject(proj.id);
+                          }}
+                          className="px-2.5 py-1 rounded-lg bg-purple-950/60 hover:bg-purple-900 text-purple-200 hover:text-white border border-purple-800/50 text-xs font-bold transition flex items-center gap-1"
+                          title="افزودن پله به این پلکان"
+                        >
+                          <Plus className="w-3.5 h-3.5 text-amber-400" />
+                          <span>افزودن پله</span>
+                        </button>
+
+                        {/* Notebook Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveProjectId(proj.id);
+                            setIsNotebookDrawerOpen(true);
+                          }}
+                          className="px-2 py-1 rounded-lg bg-purple-950/40 hover:bg-purple-900/50 text-purple-300 hover:text-amber-300 border border-purple-900/40 text-xs transition flex items-center gap-1"
+                          title="دفترچه یادداشت این پلکان"
+                        >
+                          <BookOpen className="w-3.5 h-3.5 text-amber-400" />
+                          <span className="hidden sm:inline">دفترچه</span>
+                        </button>
+
+                        {/* Duplicate Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDuplicateProject(proj);
+                          }}
+                          className="p-1.5 rounded-lg text-neutral-400 hover:text-amber-300 hover:bg-purple-950/40 transition"
+                          title="تکثیر این پلکان"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+
+                        {/* Delete Staircase (if > 1) */}
+                        {projects.length > 1 && (
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              promptDeleteProject(proj);
+                            }}
+                            className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 transition"
+                            title="حذف این پلکان"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {/* Minimize / Maximize Button */}
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleMinimizeProject(proj.id);
+                          }}
+                          className={`px-2 py-1 rounded-lg border text-xs font-bold transition flex items-center gap-1 active:scale-95 ${
+                            isMinimized
+                              ? 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                              : 'bg-purple-950/40 text-neutral-300 hover:text-white border-purple-900/40 hover:bg-purple-900/60'
+                          }`}
+                          title={isMinimized ? 'باز کردن کامل پلکان' : 'کوچک کردن پلکان (Minimize)'}
+                        >
+                          {isMinimized ? (
+                            <>
+                              <ChevronDown className="w-3.5 h-3.5 text-amber-400" />
+                              <span className="hidden sm:inline">باز کردن</span>
+                            </>
+                          ) : (
+                            <>
+                              <ChevronUp className="w-3.5 h-3.5 text-amber-400" />
+                              <span className="hidden sm:inline">کوچک کردن</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Collapsed / Minimized Preview Summary */}
+                    {isMinimized ? (
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveProjectId(proj.id);
+                          setSelectedStepId(projSteps[projSteps.length - 1].id);
+                          setIsSidebarOpen(true);
+                        }}
+                        className="w-full flex items-center justify-between py-2 px-3 sm:px-4 rounded-2xl bg-purple-950/25 border border-purple-900/30 hover:border-amber-500/30 hover:bg-purple-950/40 transition cursor-pointer flex-wrap gap-3 mt-1"
+                        dir="rtl"
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1.5 text-xs text-amber-300 font-bold">
+                            <Sparkles className="w-4 h-4 text-amber-400" />
+                            <span>هدف: {projSteps[projSteps.length - 1]?.title || 'هدف'}</span>
+                          </div>
+                          <span className="text-[11px] text-neutral-400 font-mono">
+                            ({projTotalSteps} پله • {projDoneCount} از {projTodos.length} تسک انجام شده)
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-3 flex-1 max-w-xs">
+                          <div className="w-full bg-neutral-900/80 h-2 rounded-full overflow-hidden border border-purple-900/40">
+                            <div
+                              className="bg-gradient-to-r from-amber-500 to-amber-300 h-full rounded-full transition-all duration-300"
+                              style={{
+                                width: `${projTodos.length > 0 ? (projDoneCount / projTodos.length) * 100 : 0}%`,
+                              }}
+                            />
+                          </div>
+                          <span className="text-[11px] font-mono font-bold text-amber-300 shrink-0">
+                            {projTodos.length > 0 ? Math.round((projDoneCount / projTodos.length) * 100) : 0}%
+                          </span>
+                        </div>
+
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleMinimizeProject(proj.id);
+                          }}
+                          className="text-xs text-amber-400 hover:text-amber-300 font-bold flex items-center gap-1 hover:underline"
+                        >
+                          <span>مشاهده پله‌ها</span>
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      /* Staircase Steps Display */
+                      <div
+                        ref={(el) => {
+                          stepScrollRefs.current[proj.id] = el;
+                        }}
+                        className="w-full overflow-x-auto custom-scrollbar py-4 select-none"
+                        dir="ltr"
+                      >
+                        <div
+                          style={{
+                            transform: `scale(${scale})`,
+                            transformOrigin: projTotalSteps * stepWidth > 750 ? 'bottom left' : 'bottom center',
+                            transition: 'transform 0.15s ease-out',
+                          }}
+                          className="pt-10 pb-16 px-10 sm:px-16 min-w-full w-max flex items-end justify-center"
+                        >
+                          <div className="flex items-end shadow-2xl relative shrink-0" dir="ltr">
+                            {projSteps.map((step, idx) => {
+                              const isLast = idx === projTotalSteps - 1;
+                              const isFirst = idx === 0;
+                              const isSelected = isThisProjActive && step.id === selectedStep?.id;
+                              const stepDate = getStepDateInfo(step, idx, proj);
+
+                              // Gap detection: check if there are missing calendar days between previous step and this step
+                              const prevStep = idx > 0 ? projSteps[idx - 1] : null;
+                              const missingDays =
+                                prevStep && idx > 0
+                                  ? getMissingDaysBetween(
+                                      getStepDateObj(prevStep, idx - 1, proj),
+                                      getStepDateObj(step, idx, proj)
+                                    )
+                                  : [];
+
+                              // Linear ascend from minStepHeight to maxStepHeight
+                              const height =
+                                projTotalSteps <= 1
+                                  ? 160
+                                  : minStepHeight +
+                                    (idx / Math.max(1, projTotalSteps - 1)) * (maxStepHeight - minStepHeight);
+
+                              // Calculate intermediate height for red gap dots based on prev and current step heights
+                              const prevHeight =
+                                idx > 0
+                                  ? minStepHeight +
+                                    ((idx - 1) / Math.max(1, projTotalSteps - 1)) * (maxStepHeight - minStepHeight)
+                                  : height;
+
+                              const darkPurpleColor = step.color || '#280f45';
+                              const completedTodos = step.todos.filter((t) => t.completed).length;
+                              const totalTodos = step.todos.length;
+                              const isStepAllDone = totalTodos > 0 && completedTodos === totalTodos;
+
+                              return (
+                                <React.Fragment key={step.id}>
+                                  {/* MISSING DAYS VISUALIZATION: Red dots with date under each dot */}
+                                  {missingDays.map((gapDay, gIdx) => {
+                                    const fraction = (gIdx + 1) / (missingDays.length + 1);
+                                    const dotPillarHeight = prevHeight + fraction * (height - prevHeight);
+
+                                    return (
+                                      <div
+                                        key={`gap-${gapDay.isoStr}-${gIdx}`}
+                                        className="relative flex flex-col items-center justify-end shrink-0 select-none group/gap"
+                                        style={{ width: '84px', minWidth: '84px' }}
+                                      >
+                                        {/* Tooltip on hover */}
+                                        <div className="absolute bottom-full mb-2 opacity-0 group-hover/gap:opacity-100 transition-opacity duration-200 pointer-events-none z-30 flex flex-col items-center">
+                                          <div className="bg-rose-950/95 border border-rose-500/70 text-rose-200 text-[10px] font-bold px-2.5 py-1 rounded-lg shadow-lg whitespace-nowrap text-center">
+                                            <span>روز فاقد پله و فعالیت</span>
+                                            <div className="text-white font-mono text-[9px] mt-0.5">
+                                              {gapDay.dateInfo.dayEn} {gapDay.dateInfo.month} {gapDay.dateInfo.yearEn}
+                                            </div>
+                                          </div>
+                                          <div className="w-1.5 h-1.5 bg-rose-950 border-r border-b border-rose-500/70 rotate-45 -mt-1" />
+                                        </div>
+
+                                        {/* The Red Dot Indicator on the ascending path */}
+                                        <div
+                                          className="w-full flex flex-col items-center justify-center relative"
+                                          style={{ height: `${dotPillarHeight}px` }}
+                                        >
+                                          {/* Subtle dashed vertical lifeline */}
+                                          <div className="absolute inset-y-0 w-px border-r border-dashed border-rose-500/30" />
+
+                                          {/* Glowing Red Dot */}
+                                          <div className="relative z-10 flex items-center justify-center">
+                                            {/* Pulsing ring */}
+                                            <div className="absolute w-6 h-6 rounded-full bg-rose-500/20 animate-ping opacity-60" />
+                                            {/* Outer Glow */}
+                                            <div className="w-4 h-4 rounded-full bg-gradient-to-tr from-rose-700 via-rose-600 to-red-400 border-2 border-rose-300 shadow-[0_0_14px_rgba(244,63,94,0.85)] flex items-center justify-center transition-transform group-hover/gap:scale-125">
+                                              {/* Center Core */}
+                                              <div className="w-1.5 h-1.5 rounded-full bg-white shadow-[0_0_4px_#ffffff]" />
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* DATE DIRECTLY UNDER EACH RED DOT: Vertical Stack matching staircase styling */}
+                                        <div
+                                          className="w-full pt-3 pb-2 flex flex-col items-center justify-start text-center shrink-0"
+                                          style={{ width: '84px' }}
+                                          title={`روز ثبت نشده: ${gapDay.dateInfo.yearEn}/${gapDay.dateInfo.dayEn}/${gapDay.dateInfo.month}`}
+                                        >
+                                          <div className="w-[74px] py-2 px-1 rounded-2xl border transition-all duration-200 flex flex-col items-center justify-center gap-0.5 bg-[#1a0610]/95 border-rose-800/60 group-hover/gap:border-rose-500 group-hover/gap:bg-[#260a18] shadow-md">
+                                            {/* 1. سال (Year) */}
+                                            <span className="text-[10px] font-mono tracking-widest text-rose-300/70 leading-none">
+                                              {gapDay.dateInfo.yearEn}
+                                            </span>
+
+                                            {/* 2. روز (Day) with small red indicator dot */}
+                                            <div className="flex items-center justify-center gap-1 my-0.5">
+                                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shadow-[0_0_6px_#f43f5e]" />
+                                              <span className="text-base font-black leading-tight text-rose-400 group-hover/gap:text-rose-300">
+                                                {gapDay.dateInfo.dayEn}
+                                              </span>
+                                            </div>
+
+                                            {/* 3. ماه (Month) */}
+                                            <span className="text-[11px] font-bold leading-none text-rose-300/80">
+                                              {gapDay.dateInfo.month}
+                                            </span>
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+
+                                  {/* THE STAIR STEP PILLAR */}
+                                  <div
+                                    id={`step-pillar-${step.id}`}
+                                    className="relative flex flex-col items-center justify-end group shrink-0"
+                                    style={{ width: `${stepWidth}px`, minWidth: `${stepWidth}px` }}
+                                  >
+                                {/* LABEL STRICTLY ABOVE STEP */}
+                                <div className="absolute bottom-full mb-3 flex flex-col items-center z-20 pointer-events-auto">
+                                  {isLast ? (
+                                    /* Golden Summit: Radiant sun and Goal label - ALWAYS fully visible, NO truncation with 3 dots */
+                                    editingTitleStepId === step.id ? (
+                                      <div
+                                        className="mb-1 text-center px-2.5 py-1.5 rounded-xl bg-[#1c0d2b] border border-amber-400 shadow-2xl flex items-center gap-1.5 z-30 pointer-events-auto"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <input
+                                          type="text"
+                                          value={tempStepTitle}
+                                          onChange={(e) => setTempStepTitle(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              handleSaveStepTitle();
+                                            } else if (e.key === 'Escape') {
+                                              e.preventDefault();
+                                              setEditingTitleStepId(null);
+                                            }
+                                          }}
+                                          autoFocus
+                                          className="w-40 sm:w-56 px-2 py-1 text-xs font-bold text-amber-200 bg-neutral-950 rounded-lg border border-amber-500/80 outline-none text-center"
+                                          dir="rtl"
+                                          placeholder="عنوان هدف را وارد کنید..."
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSaveStepTitle();
+                                          }}
+                                          className="p-1 rounded-lg bg-amber-500 text-slate-950 hover:bg-amber-400 transition"
+                                          title="ذخیره"
+                                        >
+                                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleStartEditTitle(step, proj.id);
+                                        }}
+                                        className="flex flex-col items-center mb-1 cursor-pointer transition-transform hover:scale-105 select-none"
+                                        title="کلیک برای ویرایش عنوان هدف"
+                                      >
+                                        {/* Bold Glowing Goal Title - ALWAYS completely visible, NEVER truncated with 3 dots */}
+                                        <div className="mb-1.5 text-center px-3 py-1.5 rounded-xl bg-[#1c0d2b]/95 border border-amber-500/60 shadow-[0_0_15px_rgba(245,158,11,0.35)] min-w-[90px] max-w-[260px] sm:max-w-[320px]">
+                                          <span
+                                            className="text-xs sm:text-sm font-black text-amber-100 tracking-wide drop-shadow-[0_0_10px_rgba(245,158,11,0.85)] text-center block leading-relaxed break-words whitespace-normal"
+                                            dir="rtl"
+                                          >
+                                            {step.title}
+                                          </span>
+                                        </div>
+
+                                        {/* Glowing Sun with Radiating Rays */}
+                                        <div className="relative w-10 h-10 flex items-center justify-center my-0.5">
+                                          <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-[#e59733] to-[#ffd074] border-2 border-[#fff0c0] shadow-[0_0_20px_#f59e0b]" />
+                                          <div className="absolute -top-1.5 w-0.5 h-3 bg-[#ffd074] rounded-full shadow-[0_0_4px_#f59e0b]" />
+                                          <div className="absolute -top-1 -right-1 w-0.5 h-3 bg-[#ffd074] rotate-45 rounded-full origin-bottom" />
+                                          <div className="absolute -top-1 -left-1 w-0.5 h-3 bg-[#ffd074] -rotate-45 rounded-full origin-bottom" />
+                                          <div className="absolute -right-1.5 w-3 h-0.5 bg-[#ffd074] rounded-full shadow-[0_0_4px_#f59e0b]" />
+                                          <div className="absolute -left-1.5 w-3 h-0.5 bg-[#ffd074] rounded-full shadow-[0_0_4px_#f59e0b]" />
+                                        </div>
+                                      </div>
+                                    )
+                                  ) : (
+                                    /* Standard Step Label Above Pillar */
+                                    editingTitleStepId === step.id ? (
+                                      <div
+                                        className="mb-1 text-center px-2 py-1.5 rounded-xl bg-[#1c0d2b] border border-purple-500 shadow-2xl flex items-center gap-1.5 z-30 pointer-events-auto"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        <input
+                                          type="text"
+                                          value={tempStepTitle}
+                                          onChange={(e) => setTempStepTitle(e.target.value)}
+                                          onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                              e.preventDefault();
+                                              handleSaveStepTitle();
+                                            } else if (e.key === 'Escape') {
+                                              e.preventDefault();
+                                              setEditingTitleStepId(null);
+                                            }
+                                          }}
+                                          autoFocus
+                                          className="w-36 px-2 py-1 text-xs font-bold text-white bg-neutral-950 rounded-lg border border-purple-500 outline-none text-center"
+                                          dir="rtl"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleSaveStepTitle();
+                                          }}
+                                          className="p-1 rounded-lg bg-purple-600 text-white hover:bg-purple-500 transition"
+                                          title="ذخیره"
+                                        >
+                                          <Check className="w-3.5 h-3.5 stroke-[3]" />
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <div
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleStartEditTitle(step, proj.id);
+                                        }}
+                                        className={`px-2.5 py-1 rounded-xl text-center cursor-pointer transition-all max-w-[135px] ${
+                                          isSelected
+                                            ? 'bg-[#1f1035] text-amber-300 font-extrabold border border-amber-500/60 shadow-lg scale-105'
+                                            : 'bg-black/75 hover:bg-[#1f1035] text-purple-200 font-bold border border-purple-900/60 hover:text-white'
+                                        }`}
+                                        title="برای ویرایش نام مرحله کلیک کنید"
+                                      >
+                                        <span className="text-[11px] leading-tight line-clamp-2 block" dir="rtl">
+                                          {step.title}
+                                        </span>
+                                        {totalTodos > 0 && (
+                                          <span
+                                            className={`text-[9px] mt-0.5 block font-mono ${
+                                              isStepAllDone ? 'text-emerald-400 font-bold' : 'text-neutral-400'
+                                            }`}
+                                          >
+                                            {isStepAllDone ? '✓ تکمیل' : `${completedTodos}/${totalTodos}`}
+                                          </span>
+                                        )}
+                                      </div>
+                                    )
+                                  )}
+                                </div>
+
+                                {/* STEP BODY PILLAR */}
+                                <div
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveProjectId(proj.id);
+                                    setSelectedStepId(step.id);
+                                    setIsSidebarOpen(true);
+                                  }}
+                                  className={`relative w-full cursor-pointer transition-all duration-300 ease-out border-t border-l border-r ${
+                                    isLast
+                                      ? 'border-[#f59e0b] shadow-[0_0_40px_rgba(245,158,11,0.55)]'
+                                      : 'border-[#6b21a8]/45'
+                                  } ${
+                                    isSelected
+                                      ? 'ring-2 ring-amber-400 shadow-[0_0_35px_rgba(245,158,11,0.6)] z-10 brightness-125 scale-[1.01]'
+                                      : 'hover:brightness-115 hover:shadow-[0_0_20px_rgba(107,33,168,0.35)] z-0'
+                                  }`}
+                                  style={{
+                                    height: `${height}px`,
+                                    backgroundColor: isLast ? undefined : darkPurpleColor,
+                                    background: isLast
+                                      ? 'linear-gradient(180deg, #f59e0b 0%, #d97706 40%, #78350f 100%)'
+                                      : `linear-gradient(180deg, ${darkPurpleColor} 0%, #150726 100%)`,
+                                    boxShadow: isLast
+                                      ? '0 0 35px rgba(245, 158, 11, 0.5), inset 0 2px 4px rgba(255,255,255,0.4)'
+                                      : isSelected
+                                      ? 'inset 0 1px 0 rgba(255,255,255,0.25), 0 0 25px rgba(168, 85, 247, 0.45)'
+                                      : 'inset 0 1px 0 rgba(255,255,255,0.15)',
+                                  }}
+                                >
+                                  {/* Inner top highlight line for 3D pillar realism */}
+                                  <div className="absolute top-0 inset-x-0 h-1.5 bg-white/20" />
+
+                                  {/* Completed tasks progress atmospheric glow inside pillar */}
+                                  {totalTodos > 0 && !isLast && (
+                                    <div
+                                      className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-fuchsia-600/30 to-transparent pointer-events-none transition-all"
+                                      style={{
+                                        height: `${(completedTodos / totalTodos) * 100}%`,
+                                      }}
+                                    />
+                                  )}
+                                </div>
+
+                                {/* DATE DIRECTLY UNDER EACH STEP: Vertical Stack (سال / روز / ماه) */}
+                                <div
+                                  className="w-full pt-3 pb-2 flex flex-col items-center justify-start text-center shrink-0 select-none cursor-pointer z-10"
+                                  style={{ width: `${stepWidth}px` }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveProjectId(proj.id);
+                                    setSelectedStepId(step.id);
+                                    setIsSidebarOpen(true);
+                                  }}
+                                  title={`تاریخ: ${stepDate.yearEn}/${stepDate.dayEn}/${stepDate.month} (کلیک برای ویرایش تسک‌ها و تاریخ)`}
+                                >
+                                  {/* Date Capsule Card */}
+                                  <div
+                                    className={`w-[104px] py-2 px-1 rounded-2xl border transition-all duration-200 flex flex-col items-center justify-center gap-0.5 ${
+                                      isSelected
+                                        ? 'bg-[#201038] border-amber-500 shadow-[0_0_22px_rgba(245,158,11,0.35)] ring-1 ring-amber-400/60'
+                                        : isLast
+                                        ? 'bg-[#180d26] border-amber-500/50 hover:border-amber-400 shadow-md hover:bg-[#201133]'
+                                        : 'bg-[#100720]/95 border-purple-900/60 hover:border-purple-600/70 hover:bg-[#180b30] shadow-md'
+                                    }`}
+                                  >
+                                    {/* 1. سال (Year) */}
+                                    <span className="text-[11px] font-mono tracking-widest text-neutral-400 leading-none">
+                                      {stepDate.yearEn}
+                                    </span>
+
+                                    {/* 2. روز (Day) */}
+                                    <span
+                                      className={`text-lg font-black leading-tight my-0.5 ${
+                                        isLast
+                                          ? 'text-amber-300 drop-shadow-[0_0_8px_rgba(245,158,11,0.6)]'
+                                          : isSelected
+                                          ? 'text-amber-200'
+                                          : 'text-white'
+                                      }`}
+                                    >
+                                      {stepDate.dayEn}
+                                    </span>
+
+                                    {/* 3. ماه (Month) */}
+                                    <span
+                                      className={`text-xs font-bold leading-none ${
+                                        isLast ? 'text-amber-400 font-black' : isSelected ? 'text-purple-200' : 'text-purple-300'
+                                      }`}
+                                    >
+                                      {stepDate.month}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            </React.Fragment>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                  {/* Aesthetic Connector Divider between stacked staircases */}
+                  {projIndex < projects.length - 1 && (
+                    <div className="flex items-center justify-center gap-3 w-full py-1 opacity-60">
+                      <div className="h-px bg-gradient-to-r from-transparent via-purple-600/50 to-transparent flex-1 max-w-sm" />
+                      <span className="text-[11px] text-purple-400/80 font-mono px-2.5 py-0.5 rounded-full bg-purple-950/40 border border-purple-900/30">
+                        ↓ پلکان بعدی ↓
+                      </span>
+                      <div className="h-px bg-gradient-to-r from-purple-600/50 via-purple-600/50 to-transparent flex-1 max-w-sm" />
+                    </div>
+                  )}
+                </React.Fragment>
+              );
+            })}
+
+            {/* Bottom Button to Create Another Staircase Below */}
+            <button
+              onClick={handleCreateNewProject}
+              className="my-4 px-6 py-3 rounded-2xl bg-[#170e28] hover:bg-[#251540] border-2 border-dashed border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200 font-extrabold text-sm flex items-center gap-2.5 transition-all shadow-xl hover:shadow-[0_0_25px_rgba(245,158,11,0.25)] hover:scale-[1.02] active:scale-95"
+            >
+              <Plus className="w-5 h-5 text-amber-400" />
+              <span>+ ایجاد یک پلکان دیگر در زیر این پلکان</span>
+            </button>
 
             {/* Bottom Floating Helper Info */}
-            <div className="absolute bottom-3 right-6 text-[11px] text-neutral-400 flex items-center gap-1.5 pointer-events-none" dir="rtl">
+            <div className="text-[11px] text-neutral-400 flex items-center gap-1.5 pb-4 pointer-events-none" dir="rtl">
               <Info className="w-3.5 h-3.5 text-purple-400" />
-              <span>روی هر پله کلیک کنید تا تسک‌های آن باز شود • پله‌ها بنفش دارک و قله طلایی درخشان است</span>
+              <span>روی هر پله یا پلکان کلیک کنید تا منوی سمت چپ به آن متصل شود • برای مشاهده تمام پلکان‌ها اسکرول عمودی کنید</span>
             </div>
           </div>
 
@@ -1303,6 +2119,18 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
             >
               {selectedStep ? (
                 <div className="flex-1 flex flex-col p-5 overflow-hidden">
+                  {/* Active Staircase Indicator in Left Sidebar */}
+                  <div className="flex items-center justify-between px-3 py-2 mb-3 rounded-xl bg-gradient-to-r from-amber-500/15 via-purple-950/40 to-purple-950/20 border border-amber-500/30 text-amber-300">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Trophy className="w-4 h-4 text-amber-400 shrink-0" />
+                      <span className="text-[11px] text-neutral-400 shrink-0">پلکان فعال:</span>
+                      <span className="text-xs font-black truncate max-w-[170px]">{activeProject.title}</span>
+                    </div>
+                    <span className="text-[10px] text-amber-300 font-mono bg-amber-500/20 px-2 py-0.5 rounded-lg shrink-0">
+                      {projects.findIndex((p) => p.id === activeProject.id) + 1} از {projects.length}
+                    </span>
+                  </div>
+
                   {/* Header of Active Step */}
                   <div className="pb-4 border-b border-purple-950/60">
                     <div className="flex items-center justify-between mb-2">
@@ -1347,9 +2175,9 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                         {/* Delete Step Button */}
                         <button
                           onClick={() => handleRemoveStep(selectedStep.id)}
-                          disabled={steps.length <= 2}
+                          disabled={steps.length <= 1 || isGoalStep}
                           className="p-1.5 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-950/30 transition disabled:opacity-30 disabled:hover:bg-transparent"
-                          title="حذف این پله"
+                          title={isGoalStep ? 'پله هدف قابل حذف نیست' : steps.length <= 1 ? 'حداقل یک پله باید باقی بماند' : 'حذف این پله'}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -1396,42 +2224,128 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                       </div>
                     )}
 
-                    {/* Step Creation Date Badge - Strictly Read-only & Permanent */}
+                    {/* Step Date Information with Date Picker */}
                     {(() => {
-                      const stepTimestamp =
-                        selectedStep.createdAt ||
-                        selectedStep.todos[0]?.createdAt ||
-                        activeProject.createdAt ||
-                        Date.now();
-                      const shamsiDateStr = formatShamsiDate(new Date(stepTimestamp), {
-                        showWeekday: true,
-                        showYear: true,
-                      });
-                      const timeStr = formatHHMM(stepTimestamp, true);
+                      const currentStepDate = selectedStep
+                        ? getStepDateInfo(selectedStep, selectedStepIndex, activeProject)
+                        : null;
+
+                      if (!currentStepDate || !selectedStep) return null;
+
+                      const stepDateObj = getStepDateObj(selectedStep, selectedStepIndex, activeProject);
+                      const pad = (n: number) => n.toString().padStart(2, '0');
+                      const currentIsoDate = `${stepDateObj.getFullYear()}-${pad(stepDateObj.getMonth() + 1)}-${pad(stepDateObj.getDate())}`;
 
                       return (
                         <div
-                          className="mt-2.5 flex items-center justify-between px-3 py-2 rounded-xl bg-purple-950/40 border border-purple-800/40 select-none"
-                          title="تاریخ ثبت این پله (ثابت و به هیچ عنوان قابل تغییر نیست)"
+                          className="mt-2.5 flex flex-col gap-2 p-2.5 rounded-xl bg-purple-950/40 border border-purple-800/40 select-none"
+                          title="تاریخ اختصاص یافته به این پله در مسیر پلکان"
                         >
-                          <div className="flex items-center gap-2 text-purple-200 min-w-0">
-                            <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                            <span className="text-[11px] text-neutral-400 shrink-0">تاریخ ثبت پله:</span>
-                            <span className="text-xs font-black text-amber-300 truncate">
-                              {shamsiDateStr}
-                            </span>
-                            <span className="text-[10px] text-neutral-400 font-mono hidden sm:inline">
-                              ({timeStr})
-                            </span>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-purple-200 min-w-0">
+                              <Calendar className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              <span className="text-[11px] text-neutral-400 shrink-0">تاریخ این روز:</span>
+                              <span className="text-xs font-black text-amber-300 truncate">
+                                {currentStepDate.dayEn} {currentStepDate.month} {currentStepDate.yearEn}
+                              </span>
+                            </div>
+
+                            <div
+                              className="flex items-center gap-1.5 text-[11px] font-mono text-amber-300/90 bg-amber-500/10 px-2.5 py-0.5 rounded-lg border border-amber-500/30 shrink-0 mr-1"
+                              title="ترتیب تاریخ زیر پله: سال، روز، ماه"
+                            >
+                              <span className="text-neutral-400">{currentStepDate.yearEn}</span>
+                              <span className="text-neutral-500">/</span>
+                              <span className="text-white font-bold">{currentStepDate.dayEn}</span>
+                              <span className="text-neutral-500">/</span>
+                              <span className="text-amber-300">{currentStepDate.month}</span>
+                            </div>
                           </div>
 
-                          <div
-                            className="flex items-center gap-1 text-[10px] font-bold text-amber-400/90 bg-amber-500/10 px-2 py-0.5 rounded-lg border border-amber-500/20 shrink-0 mr-1"
-                            title="این تاریخ به صورت سیستمی ثبت شده و به هیچ عنوان قابل تغییر نیست"
-                          >
-                            <Lock className="w-2.5 h-2.5 text-amber-400" />
-                            <span>غیرقابل تغییر</span>
-                          </div>
+                          {/* Quick Shamsi Date Change Input */}
+                          {(() => {
+                            const { jy, jm, jd } = getShamsiNumbers(stepDateObj);
+                            const currentYear = jy;
+                            // Available years range around current year
+                            const yearOptions = [currentYear - 2, currentYear - 1, currentYear, currentYear + 1, currentYear + 2];
+                            // Maximum days in selected Shamsi month
+                            const maxDaysInMonth = jm <= 6 ? 31 : jm <= 11 ? 30 : 29;
+                            const dayOptions = Array.from({ length: maxDaysInMonth }, (_, i) => i + 1);
+
+                            return (
+                              <div className="flex flex-col gap-1.5 pt-1.5 border-t border-purple-900/40" dir="rtl">
+                                <label className="text-[11px] text-purple-300/80 font-medium">
+                                  تغییر تاریخ شمسی پله:
+                                </label>
+                                <div className="grid grid-cols-3 gap-1.5" dir="rtl">
+                                  {/* Day Selector */}
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[9px] text-neutral-400 pr-0.5">روز</span>
+                                    <select
+                                      value={jd}
+                                      onChange={(e) => {
+                                        const newDay = parseInt(e.target.value, 10);
+                                        const iso = shamsiToIsoString(jy, jm, newDay);
+                                        handleUpdateStepDate(selectedStep.id, iso);
+                                      }}
+                                      className="w-full px-1.5 py-1 text-xs rounded-lg bg-[#140a24] border border-purple-700/60 text-amber-300 focus:outline-none focus:border-amber-400 transition cursor-pointer"
+                                      title="انتخاب روز شمسی"
+                                    >
+                                      {dayOptions.map((d) => (
+                                        <option key={d} value={d} className="bg-[#1a0c30] text-amber-200">
+                                          {toPersianDigits(d)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  {/* Month Selector */}
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[9px] text-neutral-400 pr-0.5">ماه</span>
+                                    <select
+                                      value={jm}
+                                      onChange={(e) => {
+                                        const newMonth = parseInt(e.target.value, 10);
+                                        const maxD = newMonth <= 6 ? 31 : newMonth <= 11 ? 30 : 29;
+                                        const safeDay = Math.min(jd, maxD);
+                                        const iso = shamsiToIsoString(jy, newMonth, safeDay);
+                                        handleUpdateStepDate(selectedStep.id, iso);
+                                      }}
+                                      className="w-full px-1.5 py-1 text-xs rounded-lg bg-[#140a24] border border-purple-700/60 text-amber-300 focus:outline-none focus:border-amber-400 transition cursor-pointer"
+                                      title="انتخاب ماه شمسی"
+                                    >
+                                      {PERSIAN_MONTH_NAMES.map((name, idx) => (
+                                        <option key={name} value={idx + 1} className="bg-[#1a0c30] text-amber-200">
+                                          {name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+
+                                  {/* Year Selector */}
+                                  <div className="flex flex-col gap-0.5">
+                                    <span className="text-[9px] text-neutral-400 pr-0.5">سال</span>
+                                    <select
+                                      value={jy}
+                                      onChange={(e) => {
+                                        const newYear = parseInt(e.target.value, 10);
+                                        const iso = shamsiToIsoString(newYear, jm, jd);
+                                        handleUpdateStepDate(selectedStep.id, iso);
+                                      }}
+                                      className="w-full px-1.5 py-1 text-xs rounded-lg bg-[#140a24] border border-purple-700/60 text-amber-300 focus:outline-none focus:border-amber-400 transition cursor-pointer"
+                                      title="انتخاب سال شمسی"
+                                    >
+                                      {yearOptions.map((y) => (
+                                        <option key={y} value={y} className="bg-[#1a0c30] text-amber-200">
+                                          {toPersianDigits(y)}
+                                        </option>
+                                      ))}
+                                    </select>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })()}
@@ -1498,54 +2412,119 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                         </p>
                       </div>
                     ) : (
-                      selectedStep.todos.map((todo) => (
-                        <div
-                          key={todo.id}
-                          onClick={() => handleToggleTodo(todo.id)}
-                          className={`group p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 cursor-pointer select-none ${
-                            todo.completed
-                              ? 'bg-[#120a20]/60 border-purple-950/80 text-neutral-500'
-                              : 'bg-[#19102c] border-purple-800/50 hover:border-amber-500/50 text-neutral-200 shadow-sm'
-                          }`}
-                        >
-                          <div className="flex items-center gap-3 min-w-0">
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleToggleTodo(todo.id);
-                              }}
-                              className={`w-5 h-5 rounded-lg flex items-center justify-center transition-all shrink-0 ${
-                                todo.completed
-                                  ? 'bg-amber-500 text-slate-950 border border-amber-400'
-                                  : 'border-2 border-purple-600 group-hover:border-amber-400 bg-black/40'
-                              }`}
-                            >
-                              {todo.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
-                            </button>
-
-                            <span
-                              className={`text-xs sm:text-sm font-medium leading-relaxed truncate ${
-                                todo.completed ? 'line-through text-neutral-500' : 'text-neutral-200'
-                              }`}
-                            >
-                              {todo.text}
-                            </span>
-                          </div>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeleteTodo(todo.id);
+                      selectedStep.todos.map((todo) => {
+                        const isEditing = editingTodoId === todo.id;
+                        return (
+                          <div
+                            key={todo.id}
+                            onClick={() => {
+                              if (!isEditing) handleToggleTodo(todo.id);
                             }}
-                            className="p-1.5 text-neutral-500 hover:text-rose-400 rounded-lg hover:bg-neutral-800 opacity-0 group-hover:opacity-100 transition shrink-0"
-                            title="حذف تسک"
+                            className={`group p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 select-none ${
+                              isEditing
+                                ? 'bg-[#1e1335] border-amber-500/70 ring-2 ring-amber-500/20 text-neutral-100 shadow-md cursor-default'
+                                : todo.completed
+                                ? 'bg-[#120a20]/60 border-purple-950/80 text-neutral-500 cursor-pointer'
+                                : 'bg-[#19102c] border-purple-800/50 hover:border-amber-500/50 text-neutral-200 shadow-sm cursor-pointer'
+                            }`}
                           >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              {!isEditing && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleToggleTodo(todo.id);
+                                  }}
+                                  className={`w-5 h-5 rounded-lg flex items-center justify-center transition-all shrink-0 ${
+                                    todo.completed
+                                      ? 'bg-amber-500 text-slate-950 border border-amber-400'
+                                      : 'border-2 border-purple-600 group-hover:border-amber-400 bg-black/40'
+                                  }`}
+                                >
+                                  {todo.completed && <Check className="w-3.5 h-3.5 stroke-[3]" />}
+                                </button>
+                              )}
+
+                              {isEditing ? (
+                                <div
+                                  className="flex items-center gap-2 flex-1 min-w-0"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <input
+                                    type="text"
+                                    value={tempTodoText}
+                                    onChange={(e) => setTempTodoText(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleSaveEditTodo();
+                                      } else if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        handleCancelEditTodo();
+                                      }
+                                    }}
+                                    autoFocus
+                                    className="flex-1 px-3 py-1.5 rounded-xl bg-[#0d0718] border border-amber-500/60 text-white text-xs outline-none focus:ring-1 focus:ring-amber-400 font-medium"
+                                    placeholder="متن تسک..."
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={handleSaveEditTodo}
+                                    className="p-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 transition shrink-0"
+                                    title="ذخیره تغییرات"
+                                  >
+                                    <Check className="w-4 h-4 stroke-[3]" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={handleCancelEditTodo}
+                                    className="p-1.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition shrink-0"
+                                    title="انصراف"
+                                  >
+                                    <X className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <span
+                                  className={`text-xs sm:text-sm font-medium leading-relaxed truncate ${
+                                    todo.completed ? 'line-through text-neutral-500' : 'text-neutral-200'
+                                  }`}
+                                >
+                                  {todo.text}
+                                </span>
+                              )}
+                            </div>
+
+                            {!isEditing && (
+                              <div className="flex items-center gap-1 shrink-0 opacity-0 group-hover:opacity-100 transition">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStartEditTodo(todo);
+                                  }}
+                                  className="p-1.5 text-neutral-400 hover:text-amber-300 rounded-lg hover:bg-purple-900/40 transition"
+                                  title="ویرایش تسک"
+                                >
+                                  <Edit2 className="w-4 h-4" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteTodo(todo.id);
+                                  }}
+                                  className="p-1.5 text-neutral-400 hover:text-rose-400 rounded-lg hover:bg-rose-950/40 transition"
+                                  title="حذف تسک"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })
                     )}
                   </div>
 

@@ -59,6 +59,7 @@ export interface StairStep {
   title: string;
   color?: string;
   createdAt?: number;
+  customDate?: string; // Optional custom ISO date (YYYY-MM-DD) or timestamp
   todos: StaircaseTodo[];
 }
 

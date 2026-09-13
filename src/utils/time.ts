@@ -97,6 +97,173 @@ export function formatShamsiDate(
   }
 }
 
+export interface ShamsiDateStack {
+  year: string; // e.g. "۱۴۰۵"
+  day: string; // e.g. "۲۰"
+  month: string; // e.g. "شهریور"
+  yearEn: string; // "1405"
+  dayEn: string; // "20"
+  isoString: string; // "YYYY-MM-DD"
+  fullFormatted: string; // "۲۰ شهریور ۱۴۰۵"
+}
+
+/**
+ * Returns vertical date stack (سال / روز / ماه) in Shamsi format
+ */
+export function getShamsiDateStack(dateInput: Date | number | string): ShamsiDateStack {
+  let d: Date;
+  if (typeof dateInput === 'number') {
+    d = new Date(dateInput);
+  } else if (typeof dateInput === 'string') {
+    const parts = dateInput.split('-');
+    if (parts.length === 3) {
+      d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+    } else {
+      d = new Date(dateInput);
+    }
+  } else {
+    d = dateInput;
+  }
+
+  if (isNaN(d.getTime())) {
+    d = new Date();
+  }
+
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  const isoString = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+
+  try {
+    const formatter = new Intl.DateTimeFormat('fa-IR-u-ca-persian', {
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+    });
+    const parts = formatter.formatToParts(d);
+    const rawYear = parts.find((p) => p.type === 'year')?.value || '';
+    const rawMonth = parts.find((p) => p.type === 'month')?.value || '';
+    const rawDay = parts.find((p) => p.type === 'day')?.value || '';
+
+    const toEnglishDigits = (str: string) => {
+      const persianDigits = ['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+      return str.replace(/[۰-۹]/g, (w) => persianDigits.indexOf(w).toString());
+    };
+
+    const cleanYear = rawYear.replace(/[^\d۰-۹]/g, '') || '۱۴۰۵';
+    const cleanDay = rawDay.replace(/[^\d۰-۹]/g, '') || '۲۰';
+    const cleanMonth = rawMonth.trim() || 'شهریور';
+
+    return {
+      year: cleanYear,
+      day: cleanDay,
+      month: cleanMonth,
+      yearEn: toEnglishDigits(cleanYear),
+      dayEn: toEnglishDigits(cleanDay),
+      isoString,
+      fullFormatted: `${cleanDay} ${cleanMonth} ${cleanYear}`,
+    };
+  } catch {
+    return {
+      year: '۱۴۰۵',
+      day: '۲۰',
+      month: 'شهریور',
+      yearEn: '1405',
+      dayEn: '20',
+      isoString,
+      fullFormatted: '۲۰ شهریور ۱۴۰۵',
+    };
+  }
+}
+
+/**
+ * Convert Jalali (Shamsi) year, month (1-12), day (1-31) to Gregorian [year, month (1-12), day (1-31)]
+ */
+export function jalaliToGregorian(jy: number, jm: number, jd: number): [number, number, number] {
+  jy += 1595;
+  let days = -355668 + (365 * jy) + (Math.floor(jy / 33) * 8) + Math.floor(((jy % 33) + 3) / 4) + jd + ((jm < 7) ? (jm - 1) * 31 : ((jm - 7) * 30) + 186);
+  let gy = 400 * Math.floor(days / 146097);
+  days %= 146097;
+  if (days > 36524) {
+    gy += 100 * Math.floor(--days / 36524);
+    days %= 36524;
+    if (days >= 365) days++;
+  }
+  gy += 4 * Math.floor(days / 1461);
+  days %= 1461;
+  if (days > 365) {
+    gy += Math.floor((days - 1) / 365);
+    days = (days - 1) % 365;
+  }
+  let gd = days + 1;
+  const sal_a = [0, 31, ((gy % 4 === 0 && gy % 100 !== 0) || (gy % 400 === 0)) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+  let gm = 0;
+  for (gm = 0; gm < 13 && gd > sal_a[gm]; gm++) gd -= sal_a[gm];
+  return [gy, gm, gd];
+}
+
+/**
+ * Convert Gregorian year, month (1-12), day (1-31) to Jalali [year, month (1-12), day (1-31)]
+ */
+export function gregorianToJalali(gy: number, gm: number, gd: number): [number, number, number] {
+  const g_d_m = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+  const gy2 = (gm > 2) ? (gy + 1) : gy;
+  let days = 355666 + (365 * gy) + Math.floor((gy2 + 3) / 4) - Math.floor((gy2 + 99) / 100) + Math.floor((gy2 + 399) / 400) + gd + g_d_m[gm - 1];
+  let jy = -1595 + (33 * Math.floor(days / 12053));
+  days %= 12053;
+  jy += 4 * Math.floor(days / 1461);
+  days %= 1461;
+  if (days > 365) {
+    jy += Math.floor((days - 1) / 365);
+    days = (days - 1) % 365;
+  }
+  const jm = (days < 186) ? 1 + Math.floor(days / 31) : 7 + Math.floor((days - 186) / 30);
+  const jd = 1 + ((days < 186) ? (days % 31) : ((days - 186) % 30));
+  return [jy, jm, jd];
+}
+
+/**
+ * Convert Shamsi date (year, month, day) directly to ISO "YYYY-MM-DD"
+ */
+export function shamsiToIsoString(jy: number, jm: number, jd: number): string {
+  const [gy, gm, gd] = jalaliToGregorian(jy, jm, jd);
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${gy}-${pad(gm)}-${pad(gd)}`;
+}
+
+/**
+ * Convert Date or ISO date string to Shamsi { year, month, day } numbers
+ */
+export function getShamsiNumbers(dateInput: Date | string): { jy: number; jm: number; jd: number } {
+  let d: Date;
+  if (typeof dateInput === 'string') {
+    const parts = dateInput.split('-');
+    if (parts.length === 3) {
+      d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10), 12, 0, 0);
+    } else {
+      d = new Date(dateInput);
+    }
+  } else {
+    d = dateInput;
+  }
+  if (isNaN(d.getTime())) d = new Date();
+  const [jy, jm, jd] = gregorianToJalali(d.getFullYear(), d.getMonth() + 1, d.getDate());
+  return { jy, jm, jd };
+}
+
+export const PERSIAN_MONTH_NAMES = [
+  'فروردین',
+  'اردیبهشت',
+  'خرداد',
+  'تیر',
+  'مرداد',
+  'شهریور',
+  'مهر',
+  'آبان',
+  'آذر',
+  'دی',
+  'بهمن',
+  'اسفند',
+];
+
 /**
  * Format hour number (0 to 23) into time string "00:00", "01:00", etc.
  */
