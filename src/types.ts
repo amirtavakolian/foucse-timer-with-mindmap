@@ -70,6 +70,7 @@ export interface StaircaseProject {
   createdAt: number;
   steps: StairStep[];
   notes?: string;
+  parentId?: string; // Optional ID of parent staircase if this is a sub-staircase
 }
 
 export interface NoteItem {

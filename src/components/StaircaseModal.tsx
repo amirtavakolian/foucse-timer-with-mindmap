@@ -33,6 +33,7 @@ import {
   BookOpen,
   Download,
   Sparkles,
+  GitBranch,
 } from 'lucide-react';
 import { StairStep, StaircaseTodo, StaircaseProject } from '../types';
 import {
@@ -58,11 +59,11 @@ interface StaircaseModalProps {
   onSyncTasksToMain?: (tasks: string[]) => void;
 }
 
-// Default single-step template with Golden Summit for the goal
-const createDefaultSteps = (): StairStep[] => [
+// Default single-step template with Golden Summit for the goal (creates exactly 1 step as requested)
+const createDefaultSteps = (goalTitle = 'هدف نهایی'): StairStep[] => [
   {
     id: `step-${Date.now()}-goal`,
-    title: 'هدف نهایی',
+    title: goalTitle,
     color: '#78350f', // EXACT Golden summit preserved
     createdAt: new Date().getTime(),
     todos: [],
@@ -212,8 +213,82 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
   // Alert / Warning Notice State (e.g. for minimum step or minimum project limits)
   const [warningNotice, setWarningNotice] = useState<string | null>(null);
 
+  // Create New Staircase Modal State (Modal for independent vs sub-staircase)
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [newStaircaseTitle, setNewStaircaseTitle] = useState('');
+  const [newStaircaseGoal, setNewStaircaseGoal] = useState('هدف نهایی');
+  const [newStaircaseType, setNewStaircaseType] = useState<'independent' | 'sub'>('independent');
+  const [selectedParentId, setSelectedParentId] = useState<string>('');
+
+  // Dropdown menu state to expand/collapse sub-staircases per root staircase (hidden by default)
+  const [expandedDropdownRoots, setExpandedDropdownRoots] = useState<Record<string, boolean>>({});
+
+  const toggleDropdownRoot = (rootId: string) => {
+    setExpandedDropdownRoots((prev) => ({
+      ...prev,
+      [rootId]: !prev[rootId],
+    }));
+  };
+
   const containerRef = useRef<HTMLDivElement>(null);
   const stepScrollRefs = useRef<Record<string, HTMLDivElement | null>>({});
+
+  // Mouse Drag-to-Scroll State & Handlers for Horizontal Staircase scrolling
+  const dragScrollState = useRef<{
+    isDown: boolean;
+    startX: number;
+    scrollLeft: number;
+    hasMoved: boolean;
+    activeProjId: string | null;
+  }>({
+    isDown: false,
+    startX: 0,
+    scrollLeft: 0,
+    hasMoved: false,
+    activeProjId: null,
+  });
+
+  const handleMouseDownDrag = (e: React.MouseEvent<HTMLDivElement>, projId: string) => {
+    const target = e.target as HTMLElement;
+    // Don't drag if user clicked on form inputs or buttons
+    if (target.closest('input, textarea, select, button')) {
+      return;
+    }
+    const container = stepScrollRefs.current[projId];
+    if (!container) return;
+
+    dragScrollState.current = {
+      isDown: true,
+      startX: e.pageX,
+      scrollLeft: container.scrollLeft,
+      hasMoved: false,
+      activeProjId: projId,
+    };
+  };
+
+  const handleMouseMoveDrag = (e: React.MouseEvent<HTMLDivElement>, projId: string) => {
+    if (!dragScrollState.current.isDown || dragScrollState.current.activeProjId !== projId) return;
+    const container = stepScrollRefs.current[projId];
+    if (!container) return;
+
+    const deltaX = e.pageX - dragScrollState.current.startX;
+    if (Math.abs(deltaX) > 4) {
+      dragScrollState.current.hasMoved = true;
+    }
+    // Scroll horizontally left/right smoothly
+    container.scrollLeft = dragScrollState.current.scrollLeft - deltaX;
+  };
+
+  const handleMouseUpOrLeaveDrag = (projId: string) => {
+    if (dragScrollState.current.activeProjId === projId) {
+      dragScrollState.current.isDown = false;
+      dragScrollState.current.activeProjId = null;
+      // Keep hasMoved briefly to block unwanted click triggers right after dragging
+      setTimeout(() => {
+        dragScrollState.current.hasMoved = false;
+      }, 60);
+    }
+  };
 
   // Auto-save projects to storage (both localStorage and server file) whenever updated
   useEffect(() => {
@@ -249,6 +324,16 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     projects.find((p) => p.id === activeProjectId) || projects[0] || INITIAL_PROJECTS[0];
   const steps = activeProject.steps;
   const totalSteps = steps.length;
+
+  // Hierarchical resolution for main canvas display:
+  // Root ID is the parent ID (if active is a sub-staircase) or active project itself
+  const currentRootId = activeProject.parentId || activeProject.id;
+  const currentRootProject = projects.find((p) => p.id === currentRootId) || activeProject;
+
+  // In the main view, show ONLY the active root project and its sub-staircases (stacked vertically)
+  const visibleProjects = projects.filter(
+    (p) => p.id === currentRootId || p.parentId === currentRootId
+  );
 
   // Keep selectedStepId valid
   useEffect(() => {
@@ -335,29 +420,66 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     }
   };
 
-  // Project Management (Multiple Staircases)
-  // When creating a new staircase, insert it directly UNDER the current active staircase
+  // Project Management (Multiple Staircases & Sub-Staircases)
+  const openCreateStaircaseModal = (defaultType: 'independent' | 'sub' = 'independent', parentId?: string) => {
+    setNewStaircaseTitle('');
+    setNewStaircaseGoal('هدف نهایی');
+    setNewStaircaseType(defaultType);
+    const targetParent = parentId || currentRootId || projects[0]?.id || '';
+    setSelectedParentId(targetParent);
+    setIsCreateModalOpen(true);
+  };
+
   const handleCreateNewProject = () => {
+    openCreateStaircaseModal('independent');
+  };
+
+  const handleConfirmCreateStaircase = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
     const newProjectId = `staircase-${Date.now()}`;
-    const newProjectNum = projects.length + 1;
-    const newSteps = createDefaultSteps();
+    const parentProject = projects.find((p) => p.id === selectedParentId);
+    const rootProjectsList = projects.filter((p) => !p.parentId);
+    
+    const defaultTitle =
+      newStaircaseType === 'sub'
+        ? `زیرمجموعه ${parentProject?.title || 'پلکان'}`
+        : `پلکان هدف ${rootProjectsList.length + 1}`;
+
+    const finalTitle = newStaircaseTitle.trim() || defaultTitle;
+    const finalGoal = newStaircaseGoal.trim() || 'هدف نهایی';
+    const newSteps = createDefaultSteps(finalGoal);
+    
+    const isSub = newStaircaseType === 'sub' && !!selectedParentId;
     const newProject: StaircaseProject = {
       id: newProjectId,
-      title: `پلکان هدف ${newProjectNum}`,
+      title: finalTitle,
       createdAt: Date.now(),
       steps: newSteps,
       notes: '',
+      parentId: isSub ? selectedParentId : undefined,
     };
 
-    // Insert directly UNDER the currently active project
-    const activeIndex = projects.findIndex((p) => p.id === activeProjectId);
     let updated: StaircaseProject[];
-    if (activeIndex !== -1) {
-      updated = [
-        ...projects.slice(0, activeIndex + 1),
-        newProject,
-        ...projects.slice(activeIndex + 1),
-      ];
+    if (isSub) {
+      const parentIndex = projects.findIndex((p) => p.id === selectedParentId);
+      if (parentIndex !== -1) {
+        // Find the last index among parent and its existing sub-staircases
+        let insertIndex = parentIndex;
+        for (let i = parentIndex + 1; i < projects.length; i++) {
+          if (projects[i].parentId === selectedParentId) {
+            insertIndex = i;
+          } else {
+            break;
+          }
+        }
+        updated = [
+          ...projects.slice(0, insertIndex + 1),
+          newProject,
+          ...projects.slice(insertIndex + 1),
+        ];
+      } else {
+        updated = [...projects, newProject];
+      }
     } else {
       updated = [...projects, newProject];
     }
@@ -368,8 +490,9 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     setSelectedStepId(newSteps[newSteps.length - 1].id);
     setIsSidebarOpen(true);
     setIsProjectDropdownOpen(false);
+    setIsCreateModalOpen(false);
 
-    // Smooth scroll down to the newly created staircase below
+    // Smooth scroll down to the newly created staircase
     setTimeout(() => {
       const el = document.getElementById(`staircase-section-${newProjectId}`);
       if (el) {
@@ -485,10 +608,13 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
 
     if (deleteConfirmation.type === 'project') {
       const projectIdToDelete = deleteConfirmation.id;
-      const updated = projects.filter((p) => p.id !== projectIdToDelete);
+      // Unlink any sub-projects of the deleted project so they become independent instead of broken
+      const updated = projects
+        .filter((p) => p.id !== projectIdToDelete)
+        .map((p) => (p.parentId === projectIdToDelete ? { ...p, parentId: undefined } : p));
       setProjects(updated);
       if (activeProjectId === projectIdToDelete) {
-        setActiveProjectId(updated[0].id);
+        setActiveProjectId(updated[0]?.id || 'staircase-project-1');
       }
       setIsProjectDropdownOpen(false);
     } else if (deleteConfirmation.type === 'step') {
@@ -893,9 +1019,9 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
   };
 
   // Dimensions & Calculations
-  const minStepHeight = 90;
-  const maxStepHeight = 460;
-  const stepWidth = 145;
+  const minStepHeight = 65;
+  const maxStepHeight = 260;
+  const stepWidth = 125;
 
   const allTodos = steps.flatMap((s) => s.todos);
   const completedAllCount = allTodos.filter((t) => t.completed).length;
@@ -957,8 +1083,13 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                   <button
                     onClick={() => setIsProjectDropdownOpen(!isProjectDropdownOpen)}
                     className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-purple-950/40 hover:bg-purple-900/50 text-white font-extrabold text-sm sm:text-base border border-purple-800/50 hover:border-amber-500/50 transition group"
+                    title="مشاهده تمام پلکان‌ها و تغییر پلکان فعال"
                   >
-                    <Trophy className="w-4 h-4 text-amber-400" />
+                    {activeProject.parentId ? (
+                      <Layers className="w-4 h-4 text-fuchsia-400" />
+                    ) : (
+                      <Trophy className="w-4 h-4 text-amber-400" />
+                    )}
                     <span className="truncate max-w-[140px] sm:max-w-[240px]">{activeProject.title}</span>
                     <ChevronDown className="w-3.5 h-3.5 text-neutral-400 group-hover:text-white" />
                   </button>
@@ -984,60 +1115,160 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                 </div>
               )}
 
-              {/* Dropdown Menu for fast switching between staircases */}
+              {/* Dropdown Menu for fast switching between all staircases and sub-staircases */}
               {isProjectDropdownOpen && (
-                <div className="absolute top-full right-0 mt-2 w-72 sm:w-80 bg-[#150d24] border border-purple-800/70 rounded-2xl shadow-2xl p-2 z-50 animate-in fade-in slide-in-from-top-2">
+                <div className="absolute top-full right-0 mt-2 w-80 sm:w-96 bg-[#150d24] border border-purple-800/70 rounded-2xl shadow-2xl p-2.5 z-50 animate-in fade-in slide-in-from-top-2">
                   <div className="flex items-center justify-between px-3 py-2 border-b border-purple-900/50 text-xs font-bold text-neutral-400">
-                    <span>انتخاب پلکان:</span>
+                    <span>تمام پلکان‌ها و زیرمجموعه‌ها:</span>
                     <button
-                      onClick={handleCreateNewProject}
-                      className="text-amber-400 hover:text-amber-300 flex items-center gap-1"
+                      onClick={() => {
+                        setIsProjectDropdownOpen(false);
+                        openCreateStaircaseModal('independent');
+                      }}
+                      className="text-amber-400 hover:text-amber-300 flex items-center gap-1 text-xs font-bold"
                     >
-                      <Plus className="w-3.5 h-3.5" />
+                      <Plus className="w-3.5 h-3.5 stroke-[3]" />
                       <span>پلکان جدید</span>
                     </button>
                   </div>
 
-                  <div className="max-h-60 overflow-y-auto space-y-1 py-1.5 custom-scrollbar">
-                    {projects.map((proj) => {
-                      const isSelected = proj.id === activeProjectId;
-                      const projTodos = proj.steps.flatMap((s) => s.todos);
-                      const doneCount = projTodos.filter((t) => t.completed).length;
-
-                      return (
-                        <div
-                          key={proj.id}
-                          onClick={() => {
-                            setActiveProjectId(proj.id);
-                            setIsProjectDropdownOpen(false);
-                          }}
-                          className={`p-2.5 rounded-xl cursor-pointer transition flex items-center justify-between gap-2 ${
-                            isSelected
-                              ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 font-bold'
-                              : 'hover:bg-purple-950/60 text-neutral-300'
-                          }`}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="text-xs truncate">{proj.title}</p>
-                            <p className="text-[10px] text-neutral-400 mt-0.5">
-                              {proj.steps.length} پله • {doneCount} از {projTodos.length} تسک
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                            {isSelected && <Check className="w-4 h-4 text-amber-400" />}
-                            <button
-                              type="button"
-                              onClick={() => promptDeleteProject(proj)}
-                              className="p-1 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 transition"
-                              title="حذف این پلکان"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </div>
+                  <div className="max-h-72 overflow-y-auto space-y-1.5 py-2 custom-scrollbar">
+                    {(() => {
+                      const rootProjects = projects.filter((p) => !p.parentId);
+                      // Include any orphaned sub-projects
+                      const orphaned = projects.filter(
+                        (p) => p.parentId && !projects.some((root) => root.id === p.parentId)
                       );
-                    })}
+                      const allRoots = [...rootProjects, ...orphaned];
+
+                      return allRoots.map((rootProj) => {
+                        const isRootActive = rootProj.id === activeProjectId;
+                        const rootTodos = rootProj.steps.flatMap((s) => s.todos);
+                        const rootDoneCount = rootTodos.filter((t) => t.completed).length;
+                        const subProjects = projects.filter((p) => p.parentId === rootProj.id);
+                        const isExpanded = !!expandedDropdownRoots[rootProj.id];
+
+                        return (
+                          <div key={rootProj.id} className="space-y-1">
+                            {/* Root Staircase Item */}
+                            <div
+                              onClick={() => {
+                                setActiveProjectId(rootProj.id);
+                                setSelectedStepId(rootProj.steps[rootProj.steps.length - 1].id);
+                                setIsProjectDropdownOpen(false);
+                              }}
+                              className={`p-2.5 rounded-xl cursor-pointer transition flex items-center justify-between gap-2 ${
+                                isRootActive
+                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-bold'
+                                  : 'hover:bg-purple-950/70 bg-[#190e2b]/60 border border-purple-900/40 text-neutral-200'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1 flex items-center gap-2">
+                                <Trophy className="w-4 h-4 text-amber-400 shrink-0" />
+                                <div className="min-w-0">
+                                  <p className="text-xs truncate font-black">{rootProj.title}</p>
+                                  <p className="text-[10px] text-neutral-400 mt-0.5">
+                                    {rootProj.steps.length} پله • {rootDoneCount}/{rootTodos.length} تسک
+                                    {subProjects.length > 0 && ` • (${subProjects.length} زیرمجموعه)`}
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                {isRootActive && <Check className="w-4 h-4 text-amber-400" />}
+
+                                {/* Red Downward Arrow ONLY for staircases that have sub-staircases */}
+                                {subProjects.length > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleDropdownRoot(rootProj.id)}
+                                    className={`p-1 rounded-lg text-rose-400 hover:text-rose-200 bg-rose-950/70 hover:bg-rose-900/90 border border-rose-500/60 transition shadow-sm flex items-center justify-center ${
+                                      isExpanded ? 'bg-rose-900/90 text-rose-100 ring-1 ring-rose-400' : ''
+                                    }`}
+                                    title={isExpanded ? 'بستن زیرمجموعه‌ها' : `نمایش ${subProjects.length} زیرمجموعه`}
+                                  >
+                                    <ChevronDown
+                                      className={`w-3.5 h-3.5 text-rose-400 transition-transform duration-200 ${
+                                        isExpanded ? 'rotate-180' : ''
+                                      }`}
+                                    />
+                                  </button>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setIsProjectDropdownOpen(false);
+                                    openCreateStaircaseModal('sub', rootProj.id);
+                                  }}
+                                  className="p-1 rounded-lg text-fuchsia-300 hover:text-white hover:bg-fuchsia-950/50 transition"
+                                  title="افزودن زیرمجموعه برای این پلکان"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => promptDeleteProject(rootProj)}
+                                  className="p-1 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 transition"
+                                  title="حذف این پلکان"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Sub-Staircases indented under this root - shown ONLY when user clicked the red arrow */}
+                            {subProjects.length > 0 && isExpanded && (
+                              <div className="pr-4 space-y-1 border-r-2 border-fuchsia-500/30 mr-2 animate-in fade-in slide-in-from-top-1 duration-150">
+                                {subProjects.map((subProj) => {
+                                  const isSubActive = subProj.id === activeProjectId;
+                                  const subTodos = subProj.steps.flatMap((s) => s.todos);
+                                  const subDoneCount = subTodos.filter((t) => t.completed).length;
+
+                                  return (
+                                    <div
+                                      key={subProj.id}
+                                      onClick={() => {
+                                        setActiveProjectId(subProj.id);
+                                        setSelectedStepId(subProj.steps[subProj.steps.length - 1].id);
+                                        setIsProjectDropdownOpen(false);
+                                      }}
+                                      className={`p-2 rounded-xl cursor-pointer transition flex items-center justify-between gap-2 ${
+                                        isSubActive
+                                          ? 'bg-fuchsia-500/20 text-fuchsia-200 border border-fuchsia-500/50 font-bold'
+                                          : 'hover:bg-purple-950/50 bg-[#120722]/50 border border-purple-900/30 text-neutral-300'
+                                      }`}
+                                    >
+                                      <div className="min-w-0 flex-1 flex items-center gap-1.5">
+                                        <Layers className="w-3.5 h-3.5 text-fuchsia-400 shrink-0" />
+                                        <div className="min-w-0">
+                                          <p className="text-[11px] truncate font-bold">{subProj.title}</p>
+                                          <p className="text-[9px] text-neutral-400">
+                                            {subProj.steps.length} پله • {subDoneCount}/{subTodos.length} تسک
+                                          </p>
+                                        </div>
+                                      </div>
+
+                                      <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                                        {isSubActive && <Check className="w-3.5 h-3.5 text-fuchsia-400" />}
+                                        <button
+                                          type="button"
+                                          onClick={() => promptDeleteProject(subProj)}
+                                          className="p-1 rounded-lg text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 transition"
+                                          title="حذف این زیرمجموعه"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
+                    })()}
                   </div>
 
                   <div className="pt-2 border-t border-purple-900/50">
@@ -1048,7 +1279,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                       }}
                       className="w-full py-1.5 text-center text-xs text-neutral-400 hover:text-amber-300 transition"
                     >
-                      مشاهده کارت‌های کامل همه پلکان‌ها
+                      مشاهده کارت‌های کامل همه پلکان‌ها (گالری)
                     </button>
                   </div>
                 </div>
@@ -1343,11 +1574,11 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
         </div>
       ) : (
         /* VIEW 2: INTERACTIVE STAIRCASE CANVAS & TASK LIST */
-        <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
-          {/* Staircase Canvas Container with Vertical Scrolling */}
+        <div className="flex-1 flex flex-col md:flex-row overflow-hidden relative">
+          {/* Staircase Canvas Container with Vertical & Horizontal Scrolling */}
           <div
             ref={containerRef}
-            className="flex-1 relative bg-[#07050d] overflow-x-auto overflow-y-auto custom-scrollbar select-none flex flex-col items-center py-10 px-4 sm:px-8 gap-14 scroll-smooth"
+            className="flex-1 relative bg-[#07050d] overflow-x-auto overflow-y-auto custom-scrollbar select-none flex flex-col items-center py-4 sm:py-6 px-3 sm:px-6 gap-6 scroll-smooth min-h-0 min-w-0"
             style={{
               backgroundImage: 'radial-gradient(circle at 50% 15%, rgba(68, 20, 110, 0.25) 0%, transparent 80%)',
             }}
@@ -1411,16 +1642,16 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
               </button>
             </div>
 
-            {/* Multi-Staircase Global Toolbar (When more than 1 staircase exists) */}
-            {projects.length > 1 && (
+            {/* Multi-Staircase Global Toolbar (When active project has sub-staircases) */}
+            {visibleProjects.length > 1 && (
               <div
                 className="w-full max-w-6xl flex items-center justify-between px-4 py-2.5 rounded-2xl bg-[#140b26]/90 border border-purple-900/50 backdrop-blur-md shadow-lg"
                 dir="rtl"
               >
                 <div className="flex items-center gap-2.5">
-                  <Layers className="w-4 h-4 text-amber-400" />
+                  <Layers className="w-4 h-4 text-fuchsia-400" />
                   <span className="text-xs font-bold text-neutral-200">
-                    پلکان‌های هدف ({projects.length} پلکان)
+                    پلکان اصلی و زیرمجموعه‌ها ({visibleProjects.length} پلکان)
                   </span>
                   <span className="text-[11px] text-neutral-400 hidden sm:inline">
                     می‌توانید هر پلکان را برای مشاهده فشرده کوچک (Minimize) کنید
@@ -1447,8 +1678,8 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
               </div>
             )}
 
-            {/* Stack of All Staircases Vertically (یک پلکان زیر پلکان قبلی) */}
-            {projects.map((proj, projIndex) => {
+            {/* Stack of Visible Staircases Vertically (فقط پلکان انتخابی و زیرمجموعه‌های آن) */}
+            {visibleProjects.map((proj, projIndex) => {
               const isThisProjActive = proj.id === activeProjectId;
               const isMinimized = !!minimizedProjectIds[proj.id];
               const projSteps = proj.steps;
@@ -1469,7 +1700,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                       }
                     }}
                     className={`w-full max-w-6xl rounded-3xl transition-all duration-300 relative border flex flex-col items-center ${
-                      isMinimized ? 'p-4 sm:p-5' : 'p-5 sm:p-7'
+                      isMinimized ? 'p-3 sm:p-4' : 'p-4 sm:p-5'
                     } ${
                       isThisProjActive
                         ? 'bg-[#120822]/90 border-amber-500/50 shadow-[0_0_35px_rgba(245,158,11,0.18)] ring-1 ring-amber-400/35'
@@ -1478,15 +1709,19 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                   >
                     {/* Staircase Card Header Bar */}
                     <div
-                      className={`w-full flex items-center justify-between border-b border-purple-900/40 flex-wrap gap-3 ${
-                        isMinimized ? 'pb-2.5 mb-1' : 'pb-3.5 mb-6'
+                      className={`w-full flex items-center justify-between border-b border-purple-900/40 flex-wrap gap-2.5 ${
+                        isMinimized ? 'pb-2 mb-1' : 'pb-3 mb-3'
                       }`}
                       dir="rtl"
                     >
-                      {/* Right: Title & Active Status */}
+                      {/* Right: Title, Hierarchy Badge & Active Status */}
                       <div className="flex items-center gap-3">
-                        <span className="p-2 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/30">
-                          <Trophy className="w-4 h-4" />
+                        <span className={`p-2 rounded-xl border ${
+                          proj.parentId
+                            ? 'bg-fuchsia-500/10 text-fuchsia-400 border-fuchsia-500/30'
+                            : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                        }`}>
+                          {proj.parentId ? <Layers className="w-4 h-4" /> : <Trophy className="w-4 h-4" />}
                         </span>
 
                         {editingProjectId === proj.id ? (
@@ -1527,6 +1762,26 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                               <Edit2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
+                        )}
+
+                        {/* Hierarchy Indicator (Sub vs Main) */}
+                        {proj.parentId ? (
+                          <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/40">
+                            زیرمجموعه
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openCreateStaircaseModal('sub', proj.id);
+                            }}
+                            className="px-2.5 py-1 rounded-xl bg-fuchsia-950/60 hover:bg-fuchsia-900/80 text-fuchsia-200 hover:text-white text-[11px] font-bold border border-fuchsia-800/50 flex items-center gap-1 transition shadow-sm"
+                            title="افزودن زیرمجموعه برای این پلکان"
+                          >
+                            <Plus className="w-3 h-3 text-fuchsia-400" />
+                            <span className="hidden sm:inline">افزودن زیرمجموعه</span>
+                          </button>
                         )}
 
                         {/* Active Badge / Select Button */}
@@ -1715,7 +1970,11 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                         ref={(el) => {
                           stepScrollRefs.current[proj.id] = el;
                         }}
-                        className="w-full overflow-x-auto custom-scrollbar py-4 select-none"
+                        onMouseDown={(e) => handleMouseDownDrag(e, proj.id)}
+                        onMouseMove={(e) => handleMouseMoveDrag(e, proj.id)}
+                        onMouseUp={() => handleMouseUpOrLeaveDrag(proj.id)}
+                        onMouseLeave={() => handleMouseUpOrLeaveDrag(proj.id)}
+                        className="w-full overflow-x-auto custom-scrollbar py-2 select-none cursor-grab active:cursor-grabbing"
                         dir="ltr"
                       >
                         <div
@@ -1724,7 +1983,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                             transformOrigin: projTotalSteps * stepWidth > 750 ? 'bottom left' : 'bottom center',
                             transition: 'transform 0.15s ease-out',
                           }}
-                          className="pt-10 pb-16 px-10 sm:px-16 min-w-full w-max flex items-end justify-center"
+                          className="pt-12 pb-6 sm:pt-14 sm:pb-8 px-6 sm:px-10 min-w-full w-max flex items-end justify-center"
                         >
                           <div className="flex items-end shadow-2xl relative shrink-0" dir="ltr">
                             {projSteps.map((step, idx) => {
@@ -1746,7 +2005,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                               // Linear ascend from minStepHeight to maxStepHeight
                               const height =
                                 projTotalSteps <= 1
-                                  ? 160
+                                  ? 120
                                   : minStepHeight +
                                     (idx / Math.max(1, projTotalSteps - 1)) * (maxStepHeight - minStepHeight);
 
@@ -1845,10 +2104,10 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                                 {/* LABEL STRICTLY ABOVE STEP */}
                                 <div className="absolute bottom-full mb-3 flex flex-col items-center z-20 pointer-events-auto">
                                   {isLast ? (
-                                    /* Golden Summit: Radiant sun and Goal label - ALWAYS fully visible, NO truncation with 3 dots */
+                                    /* Golden Summit: Radiant sun on top and Goal label clearly underneath - ALWAYS fully visible, NO truncation with 3 dots */
                                     editingTitleStepId === step.id ? (
                                       <div
-                                        className="mb-1 text-center px-2.5 py-1.5 rounded-xl bg-[#1c0d2b] border border-amber-400 shadow-2xl flex items-center gap-1.5 z-30 pointer-events-auto"
+                                        className="mb-2 text-center px-3 py-2 rounded-2xl bg-[#1c0d2b] border-2 border-amber-400 shadow-2xl flex items-center gap-1.5 z-30 pointer-events-auto"
                                         onClick={(e) => e.stopPropagation()}
                                       >
                                         <input
@@ -1865,7 +2124,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                                             }
                                           }}
                                           autoFocus
-                                          className="w-40 sm:w-56 px-2 py-1 text-xs font-bold text-amber-200 bg-neutral-950 rounded-lg border border-amber-500/80 outline-none text-center"
+                                          className="w-48 sm:w-64 px-2.5 py-1.5 text-xs font-bold text-amber-200 bg-neutral-950 rounded-xl border border-amber-500 outline-none text-center"
                                           dir="rtl"
                                           placeholder="عنوان هدف را وارد کنید..."
                                         />
@@ -1875,7 +2134,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                                             e.stopPropagation();
                                             handleSaveStepTitle();
                                           }}
-                                          className="p-1 rounded-lg bg-amber-500 text-slate-950 hover:bg-amber-400 transition"
+                                          className="p-1.5 rounded-xl bg-amber-500 text-slate-950 hover:bg-amber-400 transition shadow-md"
                                           title="ذخیره"
                                         >
                                           <Check className="w-3.5 h-3.5 stroke-[3]" />
@@ -1884,30 +2143,31 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                                     ) : (
                                       <div
                                         onClick={(e) => {
+                                          if (dragScrollState.current.hasMoved) return;
                                           e.stopPropagation();
                                           handleStartEditTitle(step, proj.id);
                                         }}
                                         className="flex flex-col items-center mb-1 cursor-pointer transition-transform hover:scale-105 select-none"
                                         title="کلیک برای ویرایش عنوان هدف"
                                       >
-                                        {/* Bold Glowing Goal Title - ALWAYS completely visible, NEVER truncated with 3 dots */}
-                                        <div className="mb-1.5 text-center px-3 py-1.5 rounded-xl bg-[#1c0d2b]/95 border border-amber-500/60 shadow-[0_0_15px_rgba(245,158,11,0.35)] min-w-[90px] max-w-[260px] sm:max-w-[320px]">
-                                          <span
-                                            className="text-xs sm:text-sm font-black text-amber-100 tracking-wide drop-shadow-[0_0_10px_rgba(245,158,11,0.85)] text-center block leading-relaxed break-words whitespace-normal"
-                                            dir="rtl"
-                                          >
-                                            {step.title}
-                                          </span>
-                                        </div>
-
-                                        {/* Glowing Sun with Radiating Rays */}
-                                        <div className="relative w-10 h-10 flex items-center justify-center my-0.5">
+                                        {/* 1. Glowing Sun with Radiating Rays on top */}
+                                        <div className="relative w-10 h-10 flex items-center justify-center mb-1">
                                           <div className="w-5 h-5 rounded-full bg-gradient-to-tr from-[#e59733] to-[#ffd074] border-2 border-[#fff0c0] shadow-[0_0_20px_#f59e0b]" />
                                           <div className="absolute -top-1.5 w-0.5 h-3 bg-[#ffd074] rounded-full shadow-[0_0_4px_#f59e0b]" />
                                           <div className="absolute -top-1 -right-1 w-0.5 h-3 bg-[#ffd074] rotate-45 rounded-full origin-bottom" />
                                           <div className="absolute -top-1 -left-1 w-0.5 h-3 bg-[#ffd074] -rotate-45 rounded-full origin-bottom" />
                                           <div className="absolute -right-1.5 w-3 h-0.5 bg-[#ffd074] rounded-full shadow-[0_0_4px_#f59e0b]" />
                                           <div className="absolute -left-1.5 w-3 h-0.5 bg-[#ffd074] rounded-full shadow-[0_0_4px_#f59e0b]" />
+                                        </div>
+
+                                        {/* 2. Bold Glowing Goal Title - ALWAYS completely visible, NEVER truncated with 3 dots */}
+                                        <div className="text-center px-4 py-2 rounded-2xl bg-[#1c0d2b]/95 border-2 border-amber-400/90 shadow-[0_0_22px_rgba(245,158,11,0.45)] min-w-[110px] max-w-[280px] sm:max-w-[380px]">
+                                          <span
+                                            className="text-xs sm:text-sm font-black text-amber-100 tracking-wide drop-shadow-[0_0_8px_rgba(245,158,11,0.9)] text-center block leading-relaxed break-words whitespace-normal"
+                                            dir="rtl"
+                                          >
+                                            {step.title}
+                                          </span>
                                         </div>
                                       </div>
                                     )
@@ -1950,17 +2210,18 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                                     ) : (
                                       <div
                                         onClick={(e) => {
+                                          if (dragScrollState.current.hasMoved) return;
                                           e.stopPropagation();
                                           handleStartEditTitle(step, proj.id);
                                         }}
-                                        className={`px-2.5 py-1 rounded-xl text-center cursor-pointer transition-all max-w-[135px] ${
+                                        className={`px-2.5 py-1 rounded-xl text-center cursor-pointer transition-all min-w-[90px] max-w-[160px] ${
                                           isSelected
                                             ? 'bg-[#1f1035] text-amber-300 font-extrabold border border-amber-500/60 shadow-lg scale-105'
                                             : 'bg-black/75 hover:bg-[#1f1035] text-purple-200 font-bold border border-purple-900/60 hover:text-white'
                                         }`}
                                         title="برای ویرایش نام مرحله کلیک کنید"
                                       >
-                                        <span className="text-[11px] leading-tight line-clamp-2 block" dir="rtl">
+                                        <span className="text-[11px] leading-snug font-bold break-words whitespace-normal block" dir="rtl">
                                           {step.title}
                                         </span>
                                         {totalTodos > 0 && (
@@ -1980,6 +2241,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                                 {/* STEP BODY PILLAR */}
                                 <div
                                   onClick={(e) => {
+                                    if (dragScrollState.current.hasMoved) return;
                                     e.stopPropagation();
                                     setActiveProjectId(proj.id);
                                     setSelectedStepId(step.id);
@@ -2026,6 +2288,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                                   className="w-full pt-3 pb-2 flex flex-col items-center justify-start text-center shrink-0 select-none cursor-pointer z-10"
                                   style={{ width: `${stepWidth}px` }}
                                   onClick={(e) => {
+                                    if (dragScrollState.current.hasMoved) return;
                                     e.stopPropagation();
                                     setActiveProjectId(proj.id);
                                     setSelectedStepId(step.id);
@@ -2082,39 +2345,50 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                 </div>
 
                   {/* Aesthetic Connector Divider between stacked staircases */}
-                  {projIndex < projects.length - 1 && (
-                    <div className="flex items-center justify-center gap-3 w-full py-1 opacity-60">
-                      <div className="h-px bg-gradient-to-r from-transparent via-purple-600/50 to-transparent flex-1 max-w-sm" />
-                      <span className="text-[11px] text-purple-400/80 font-mono px-2.5 py-0.5 rounded-full bg-purple-950/40 border border-purple-900/30">
-                        ↓ پلکان بعدی ↓
+                  {projIndex < visibleProjects.length - 1 && (
+                    <div className="flex items-center justify-center gap-3 w-full py-1 opacity-70">
+                      <div className="h-px bg-gradient-to-r from-transparent via-fuchsia-600/50 to-transparent flex-1 max-w-sm" />
+                      <span className="text-[11px] text-fuchsia-300 font-mono px-3 py-1 rounded-full bg-purple-950/60 border border-fuchsia-900/40 shadow-sm flex items-center gap-1.5">
+                        <GitBranch className="w-3.5 h-3.5 text-fuchsia-400" />
+                        <span>↓ زیرمجموعه بعدی ↓</span>
                       </span>
-                      <div className="h-px bg-gradient-to-r from-purple-600/50 via-purple-600/50 to-transparent flex-1 max-w-sm" />
+                      <div className="h-px bg-gradient-to-r from-fuchsia-600/50 via-purple-600/50 to-transparent flex-1 max-w-sm" />
                     </div>
                   )}
                 </React.Fragment>
               );
             })}
 
-            {/* Bottom Button to Create Another Staircase Below */}
-            <button
-              onClick={handleCreateNewProject}
-              className="my-4 px-6 py-3 rounded-2xl bg-[#170e28] hover:bg-[#251540] border-2 border-dashed border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200 font-extrabold text-sm flex items-center gap-2.5 transition-all shadow-xl hover:shadow-[0_0_25px_rgba(245,158,11,0.25)] hover:scale-[1.02] active:scale-95"
-            >
-              <Plus className="w-5 h-5 text-amber-400" />
-              <span>+ ایجاد یک پلکان دیگر در زیر این پلکان</span>
-            </button>
+            {/* Bottom Buttons to Create Sub-Staircase or New Independent Staircase */}
+            <div className="my-4 flex flex-wrap items-center justify-center gap-3 w-full max-w-3xl" dir="rtl">
+              <button
+                onClick={() => openCreateStaircaseModal('sub', currentRootId)}
+                className="px-5 py-2.5 rounded-2xl bg-[#190e2b] hover:bg-[#281344] border-2 border-dashed border-fuchsia-500/50 hover:border-fuchsia-400 text-fuchsia-200 hover:text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 transition-all shadow-lg hover:shadow-[0_0_20px_rgba(217,70,239,0.25)] hover:scale-[1.02] active:scale-95"
+              >
+                <Plus className="w-4 h-4 text-fuchsia-400" />
+                <span>+ افزودن زیرمجموعه برای «{currentRootProject.title}»</span>
+              </button>
+
+              <button
+                onClick={() => openCreateStaircaseModal('independent')}
+                className="px-5 py-2.5 rounded-2xl bg-[#170e28] hover:bg-[#251540] border-2 border-dashed border-amber-500/40 hover:border-amber-400 text-amber-300 hover:text-amber-200 font-extrabold text-xs sm:text-sm flex items-center gap-2 transition-all shadow-lg hover:shadow-[0_0_20px_rgba(245,158,11,0.25)] hover:scale-[1.02] active:scale-95"
+              >
+                <Trophy className="w-4 h-4 text-amber-400" />
+                <span>+ ایجاد یک پلکان اصلی جدید</span>
+              </button>
+            </div>
 
             {/* Bottom Floating Helper Info */}
             <div className="text-[11px] text-neutral-400 flex items-center gap-1.5 pb-4 pointer-events-none" dir="rtl">
               <Info className="w-3.5 h-3.5 text-purple-400" />
-              <span>روی هر پله یا پلکان کلیک کنید تا منوی سمت چپ به آن متصل شود • برای مشاهده تمام پلکان‌ها اسکرول عمودی کنید</span>
+              <span>روی هر پله کلیک کنید تا تسک‌های آن باز شود • زیرمجموعه‌ها کاملاً مستقل از پلکان اصلی و سایر زیرمجموعه‌ها عمل می‌کنند</span>
             </div>
           </div>
 
           {/* Collapsible Left Side Drawer: Active Step To-do List */}
           {isSidebarOpen && (
             <div
-              className="w-full lg:w-[380px] xl:w-[420px] bg-[#0e0918] border-t lg:border-t-0 lg:border-r border-purple-950/60 flex flex-col shrink-0 h-full transition-all duration-300 z-20 animate-in slide-in-from-right-3"
+              className="w-full md:w-[320px] lg:w-[360px] xl:w-[400px] bg-[#0e0918] border-t md:border-t-0 md:border-r border-purple-950/60 flex flex-col shrink-0 h-[45vh] md:h-full transition-all duration-300 z-20 animate-in slide-in-from-right-3"
               dir="rtl"
             >
               {selectedStep ? (
@@ -2779,6 +3053,187 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
               >
                 <Trash2 className="w-4 h-4" />
                 <span>بله، حذف شود</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create New Staircase Modal (پلکان مستقل یا زیرمجموعه) */}
+      {isCreateModalOpen && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150 pointer-events-auto"
+          onClick={() => setIsCreateModalOpen(false)}
+          dir="rtl"
+        >
+          <div
+            className="bg-[#120822] border border-amber-500/50 rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-[0_0_50px_rgba(245,158,11,0.25)] flex flex-col gap-5 text-right relative"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-purple-900/60 pb-3.5">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-amber-600 to-amber-400 text-slate-950 flex items-center justify-center shadow-lg font-black">
+                  <Plus className="w-6 h-6 stroke-[3]" />
+                </div>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white">ایجاد پلکان جدید</h3>
+                  <p className="text-xs text-amber-300/80">تعریف پلکان مستقل جدید یا زیرمجموعه پلکان موجود</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsCreateModalOpen(false)}
+                className="p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-purple-950/60 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Input Title */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-neutral-300">عنوان پلکان:</label>
+              <input
+                type="text"
+                value={newStaircaseTitle}
+                onChange={(e) => setNewStaircaseTitle(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleConfirmCreateStaircase()}
+                placeholder={
+                  newStaircaseType === 'sub'
+                    ? 'مثال: بخش فرانت‌اند یا فاز اول پروژه...'
+                    : 'مثال: اهداف سالانه، یادگیری زبان، تناسب اندام...'
+                }
+                autoFocus
+                className="w-full px-3.5 py-2.5 rounded-2xl bg-[#080410] border border-purple-800/80 focus:border-amber-400 text-sm font-bold text-white outline-none placeholder:text-neutral-600 transition"
+              />
+            </div>
+
+            {/* Input Goal Title (First Step - Golden Summit) */}
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                <span>عنوان هدف در پله اول (قله طلایی):</span>
+              </label>
+              <input
+                type="text"
+                value={newStaircaseGoal}
+                onChange={(e) => setNewStaircaseGoal(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && handleConfirmCreateStaircase()}
+                placeholder="هدف نهایی (مثال: استخدام، قبولی، پایان پروژه...)"
+                className="w-full px-3.5 py-2.5 rounded-2xl bg-[#080410] border border-amber-500/40 focus:border-amber-400 text-sm font-bold text-amber-200 outline-none placeholder:text-amber-700/60 transition"
+              />
+              <span className="text-[10px] text-neutral-400">
+                ✨ پلکان با ۱ پله (پله هدف طلایی) ساخته می‌شود و پس از ایجاد می‌توانید پله‌های قبلی را به آن اضافه کنید.
+              </span>
+            </div>
+
+            {/* Type Selection (Independent vs Sub-Staircase) */}
+            <div className="flex flex-col gap-2.5">
+              <label className="text-xs font-bold text-neutral-300">نوع و ساختار پلکان:</label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {/* Option 1: Independent Root Staircase */}
+                <div
+                  onClick={() => setNewStaircaseType('independent')}
+                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                    newStaircaseType === 'independent'
+                      ? 'bg-amber-500/15 border-amber-500/80 shadow-[0_0_20px_rgba(245,158,11,0.2)] text-white ring-1 ring-amber-400/50'
+                      : 'bg-[#180d2e]/60 border-purple-900/50 hover:border-purple-700/60 text-neutral-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="p-2 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                      <Trophy className="w-4 h-4" />
+                    </span>
+                    <div
+                      className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                        newStaircaseType === 'independent' ? 'border-amber-400 bg-amber-500' : 'border-neutral-600'
+                      }`}
+                    >
+                      {newStaircaseType === 'independent' && <div className="w-1.5 h-1.5 rounded-full bg-slate-950" />}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-black text-white">پلکان اصلی و مستقل</p>
+                    <p className="text-[11px] text-neutral-400 leading-relaxed mt-1">
+                      یک پلکان مجزا که در فهرست پلکان‌ها به تنهایی مدیریت می‌شود.
+                    </p>
+                  </div>
+                </div>
+
+                {/* Option 2: Sub-Staircase of an existing project */}
+                <div
+                  onClick={() => setNewStaircaseType('sub')}
+                  className={`p-3.5 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between gap-2 ${
+                    newStaircaseType === 'sub'
+                      ? 'bg-fuchsia-500/15 border-fuchsia-500/80 shadow-[0_0_20px_rgba(217,70,239,0.2)] text-white ring-1 ring-fuchsia-400/50'
+                      : 'bg-[#180d2e]/60 border-purple-900/50 hover:border-purple-700/60 text-neutral-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="p-2 rounded-xl bg-fuchsia-500/20 text-fuchsia-300 border border-fuchsia-500/30">
+                      <Layers className="w-4 h-4" />
+                    </span>
+                    <div
+                      className={`w-4 h-4 rounded-full border flex items-center justify-center ${
+                        newStaircaseType === 'sub' ? 'border-fuchsia-400 bg-fuchsia-500' : 'border-neutral-600'
+                      }`}
+                    >
+                      {newStaircaseType === 'sub' && <div className="w-1.5 h-1.5 rounded-full bg-slate-950" />}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="text-xs font-black text-white">زیرمجموعه یک پلکان</p>
+                    <p className="text-[11px] text-neutral-400 leading-relaxed mt-1">
+                      در صفحه اصلی زیر پلکان انتخابی قرار می‌گیرد و مستقل پیش می‌رود.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Parent Selector when Sub-Staircase is active */}
+            {newStaircaseType === 'sub' && (
+              <div className="flex flex-col gap-1.5 animate-in fade-in slide-in-from-top-1 bg-[#1a0f33]/70 p-3 rounded-2xl border border-fuchsia-900/60">
+                <label className="text-xs font-bold text-fuchsia-200">پلکان والد را انتخاب کنید:</label>
+                <select
+                  value={selectedParentId}
+                  onChange={(e) => setSelectedParentId(e.target.value)}
+                  className="w-full px-3 py-2 rounded-xl bg-[#0b0517] border border-fuchsia-700/60 text-xs font-bold text-white outline-none"
+                >
+                  {projects
+                    .filter((p) => !p.parentId)
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title} ({p.steps.length} پله)
+                      </option>
+                    ))}
+                  {/* If no root exists, fallback */}
+                  {projects.every((p) => p.parentId) &&
+                    projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.title}
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
+
+            {/* Footer Actions */}
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-purple-900/60">
+              <button
+                type="button"
+                onClick={() => setIsCreateModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl bg-purple-950/70 hover:bg-purple-900 text-neutral-300 hover:text-white text-xs font-bold border border-purple-800/50 transition active:scale-95"
+              >
+                انصراف
+              </button>
+
+              <button
+                type="button"
+                onClick={handleConfirmCreateStaircase}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 text-xs font-black shadow-[0_0_20px_rgba(245,158,11,0.4)] transition flex items-center gap-2 active:scale-95"
+              >
+                <Plus className="w-4 h-4 stroke-[3]" />
+                <span>ایجاد و شروع</span>
               </button>
             </div>
           </div>
