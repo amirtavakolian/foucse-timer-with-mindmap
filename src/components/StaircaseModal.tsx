@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef } from 'react';
 import {
   X,
   Plus,
+  Trash,
   Trash2,
+  RotateCcw,
   ZoomIn,
   ZoomOut,
   Check,
@@ -35,12 +37,15 @@ import {
   Sparkles,
   GitBranch,
 } from 'lucide-react';
-import { StairStep, StaircaseTodo, StaircaseProject } from '../types';
+import { StairStep, StaircaseTodo, StaircaseProject, StaircaseTrashItem, DeletedStaircaseItem, DeletedStepItem } from '../types';
 import {
   loadStaircaseProjects,
   saveStaircaseProjects,
+  loadStaircaseTrash,
+  saveStaircaseTrash,
   fetchServerData,
   STAIRCASE_PROJECTS_KEY,
+  STAIRCASE_TRASH_KEY,
 } from '../utils/storage';
 import {
   formatShamsiDate,
@@ -59,16 +64,30 @@ interface StaircaseModalProps {
   onSyncTasksToMain?: (tasks: string[]) => void;
 }
 
-// Default single-step template with Golden Summit for the goal (creates exactly 1 step as requested)
-const createDefaultSteps = (goalTitle = 'هدف نهایی'): StairStep[] => [
-  {
-    id: `step-${Date.now()}-goal`,
-    title: goalTitle,
-    color: '#78350f', // EXACT Golden summit preserved
-    createdAt: new Date().getTime(),
-    todos: [],
-  },
-];
+// Helper to get ISO date string (YYYY-MM-DD) with optional day offset
+const getIsoDateString = (daysOffset = 0): string => {
+  const d = new Date();
+  if (daysOffset !== 0) {
+    d.setDate(d.getDate() + daysOffset);
+  }
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+
+// Default single-step template with Golden Summit for the goal (creates exactly 1 step with today's date)
+const createDefaultSteps = (goalTitle = 'هدف نهایی'): StairStep[] => {
+  const now = new Date();
+  return [
+    {
+      id: `step-${Date.now()}-goal`,
+      title: goalTitle,
+      color: '#78350f', // EXACT Golden summit preserved
+      createdAt: now.getTime(),
+      customDate: getIsoDateString(0),
+      todos: [],
+    },
+  ];
+};
 
 const INITIAL_PROJECTS: StaircaseProject[] = [
   {
@@ -86,18 +105,21 @@ const INITIAL_PROJECTS: StaircaseProject[] = [
         id: 's2-1',
         title: 'مبانی و آموزش اولیه',
         color: '#220d3a',
+        customDate: getIsoDateString(-5),
         todos: [{ id: 't2-1', text: 'مشاهده دوره‌های مقدماتی', completed: true, createdAt: Date.now() }],
       },
       {
         id: 's2-2',
         title: 'تمرین و پروژه‌های کوچک',
         color: '#2b104b',
+        customDate: getIsoDateString(-2),
         todos: [{ id: 't2-2', text: 'پیاده‌سازی نمونه‌های کاربردی', completed: false, createdAt: Date.now() }],
       },
       {
         id: 's2-3',
         title: 'هدف: تسلط کامل و خلق اثر',
         color: '#78350f', // Golden summit
+        customDate: getIsoDateString(0),
         todos: [{ id: 't2-3', text: 'ارائه پروژه نهایی و دستیابی به هدف', completed: false, createdAt: Date.now() }],
       },
     ],
@@ -205,6 +227,14 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     warning?: string;
   } | null>(null);
 
+  // Trash / Recycle Bin State (سطل آشغال پلکان‌ها و پله‌های حذف‌شده)
+  const [trashItems, setTrashItems] = useState<StaircaseTrashItem[]>(() => loadStaircaseTrash());
+  const [isTrashModalOpen, setIsTrashModalOpen] = useState<boolean>(false);
+  const [trashFilter, setTrashFilter] = useState<'all' | 'project' | 'step'>('all');
+  const [trashConfirmDeleteId, setTrashConfirmDeleteId] = useState<string | null>(null);
+  const [isClearTrashConfirmOpen, setIsClearTrashConfirmOpen] = useState<boolean>(false);
+  const [previewNotesItem, setPreviewNotesItem] = useState<DeletedStaircaseItem | null>(null);
+
   // Sliding Notebook Drawer State (دفترچه یادداشت کشویی سمت راست)
   const [isNotebookDrawerOpen, setIsNotebookDrawerOpen] = useState(false);
   const [notebookCopyNotice, setNotebookCopyNotice] = useState(false);
@@ -295,6 +325,11 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     saveStaircaseProjects(projects);
   }, [projects]);
 
+  // Auto-save trash to storage whenever updated
+  useEffect(() => {
+    saveStaircaseTrash(trashItems);
+  }, [trashItems]);
+
   // Dual-layer recovery: if local storage is empty, hydrate from server backend file
   useEffect(() => {
     let isMounted = true;
@@ -307,6 +342,14 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
             const migrated = migrateNonGoalStepsToDarkPurple(serverProjects);
             setProjects(migrated);
             saveStaircaseProjects(migrated);
+          }
+        }
+        const serverTrash = await fetchServerData<StaircaseTrashItem[]>(STAIRCASE_TRASH_KEY);
+        if (serverTrash && Array.isArray(serverTrash) && isMounted) {
+          const localTrash = loadStaircaseTrash();
+          if (!localTrash || localTrash.length === 0) {
+            setTrashItems(serverTrash);
+            saveStaircaseTrash(serverTrash);
           }
         }
       } catch (e) {
@@ -602,29 +645,76 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     });
   };
 
-  // Execute Confirmed Delete Action
+  // Execute Confirmed Delete Action (Moves to Trash / Recycle Bin)
   const handleExecuteConfirmedDelete = () => {
     if (!deleteConfirmation) return;
 
     if (deleteConfirmation.type === 'project') {
       const projectIdToDelete = deleteConfirmation.id;
+      const projToDelete = projects.find((p) => p.id === projectIdToDelete);
+
+      if (projToDelete) {
+        // Deep clone project and store in trash with timestamp
+        const trashItem: DeletedStaircaseItem = {
+          id: `trash-proj-${Date.now()}-${projToDelete.id}`,
+          type: 'project',
+          deletedAt: Date.now(),
+          project: JSON.parse(JSON.stringify(projToDelete)),
+        };
+        const updatedTrash = [trashItem, ...trashItems];
+        setTrashItems(updatedTrash);
+        saveStaircaseTrash(updatedTrash);
+      }
+
       // Unlink any sub-projects of the deleted project so they become independent instead of broken
       const updated = projects
         .filter((p) => p.id !== projectIdToDelete)
         .map((p) => (p.parentId === projectIdToDelete ? { ...p, parentId: undefined } : p));
       setProjects(updated);
+      saveStaircaseProjects(updated);
+
       if (activeProjectId === projectIdToDelete) {
         setActiveProjectId(updated[0]?.id || 'staircase-project-1');
       }
       setIsProjectDropdownOpen(false);
+      setSyncNotice(`پلکان «${projToDelete?.title || ''}» به سطل آشغال منتقل شد.`);
     } else if (deleteConfirmation.type === 'step') {
       const targetId = deleteConfirmation.id;
-      const targetIdx = steps.findIndex((s) => s.id === targetId);
-      const updated = steps.filter((s) => s.id !== targetId);
-      updateActiveSteps(updated);
+      // Find the project containing this step (either active or another)
+      const projContainingStep = projects.find((p) => p.steps.some((s) => s.id === targetId)) || activeProject;
+      const stepIdx = projContainingStep.steps.findIndex((s) => s.id === targetId);
+      const stepToDelete = projContainingStep.steps[stepIdx];
 
-      const nextSelectIdx = Math.max(0, Math.min(targetIdx, updated.length - 1));
+      if (stepToDelete) {
+        const trashItem: DeletedStepItem = {
+          id: `trash-step-${Date.now()}-${stepToDelete.id}`,
+          type: 'step',
+          deletedAt: Date.now(),
+          projectId: projContainingStep.id,
+          projectTitle: projContainingStep.title,
+          step: JSON.parse(JSON.stringify(stepToDelete)),
+          originalIndex: stepIdx,
+        };
+        const updatedTrash = [trashItem, ...trashItems];
+        setTrashItems(updatedTrash);
+        saveStaircaseTrash(updatedTrash);
+      }
+
+      const updated = projContainingStep.steps.filter((s) => s.id !== targetId);
+
+      setProjects((prev) =>
+        prev.map((p) => {
+          if (p.id === projContainingStep.id) {
+            const sorted = sortStepsChronologically(updated, p);
+            return { ...p, steps: sorted };
+          }
+          return p;
+        })
+      );
+
+      const nextSelectIdx = Math.max(0, Math.min(stepIdx, updated.length - 1));
       setSelectedStepId(updated[nextSelectIdx]?.id || updated[0]?.id);
+      setSyncNotice(`پله «${stepToDelete?.title || ''}» به سطل آشغال منتقل شد.`);
     } else if (deleteConfirmation.type === 'todo') {
       const todoId = deleteConfirmation.id;
       if (selectedStep) {
@@ -642,6 +732,83 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     }
 
     setDeleteConfirmation(null);
+  };
+
+  // Restore Project from Trash
+  const handleRestoreProject = (trashItem: DeletedStaircaseItem) => {
+    const projToRestore = JSON.parse(JSON.stringify(trashItem.project)) as StaircaseProject;
+
+    // Avoid duplicate ID collision if a new project was created with same ID
+    if (projects.some((p) => p.id === projToRestore.id)) {
+      projToRestore.id = `staircase-${Date.now()}`;
+    }
+
+    const updatedProjects = [...projects, projToRestore];
+    setProjects(updatedProjects);
+    saveStaircaseProjects(updatedProjects);
+
+    const updatedTrash = trashItems.filter((item) => item.id !== trashItem.id);
+    setTrashItems(updatedTrash);
+    saveStaircaseTrash(updatedTrash);
+
+    setActiveProjectId(projToRestore.id);
+    setViewMode('staircase');
+    setSyncNotice(`پلکان «${projToRestore.title}» با موفقیت بازیابی شد.`);
+  };
+
+  // Restore Step from Trash
+  const handleRestoreStep = (trashItem: DeletedStepItem) => {
+    const stepToRestore = JSON.parse(JSON.stringify(trashItem.step)) as StairStep;
+
+    // Check if target project still exists
+    let targetProj = projects.find((p) => p.id === trashItem.projectId);
+    let targetProjId = trashItem.projectId;
+
+    if (!targetProj) {
+      // If original parent staircase was deleted, restore into currently active project
+      targetProj = activeProject;
+      targetProjId = activeProject.id;
+    }
+
+    // Insert step before the last step (golden summit)
+    const pSteps = targetProj.steps;
+    const withRestored = [
+      ...pSteps.slice(0, Math.max(0, pSteps.length - 1)),
+      stepToRestore,
+      pSteps[pSteps.length - 1],
+    ];
+    const sorted = sortStepsChronologically(withRestored, targetProj);
+
+    const updatedProjects = projects.map((p) =>
+      p.id === targetProjId ? { ...p, steps: sorted } : p
+    );
+    setProjects(updatedProjects);
+    saveStaircaseProjects(updatedProjects);
+
+    const updatedTrash = trashItems.filter((item) => item.id !== trashItem.id);
+    setTrashItems(updatedTrash);
+    saveStaircaseTrash(updatedTrash);
+
+    setActiveProjectId(targetProjId);
+    setSelectedStepId(stepToRestore.id);
+    setSyncNotice(`پله «${stepToRestore.title}» با موفقیت بازیابی شد.`);
+  };
+
+  // Permanent Delete Single Item from Trash
+  const handlePermanentDelete = (trashId: string) => {
+    const updatedTrash = trashItems.filter((item) => item.id !== trashId);
+    setTrashItems(updatedTrash);
+    saveStaircaseTrash(updatedTrash);
+    setTrashConfirmDeleteId(null);
+    setSyncNotice('مورد با موفقیت به طور کامل و دائم حذف شد.');
+  };
+
+  // Empty Entire Trash
+  const handleEmptyTrash = () => {
+    setTrashItems([]);
+    saveStaircaseTrash([]);
+    setIsClearTrashConfirmOpen(false);
+    setSyncNotice('سطل آشغال به طور کامل پاکسازی شد.');
   };
 
   const handleDuplicateProject = (proj: StaircaseProject) => {
@@ -760,6 +927,14 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
       }
     }
 
+    if (step.createdAt) {
+      const parsed = new Date(step.createdAt);
+      if (!isNaN(parsed.getTime())) {
+        parsed.setHours(12, 0, 0, 0);
+        return parsed;
+      }
+    }
+
     let baseDate: Date;
     if (proj.steps[0]?.customDate) {
       const parts = proj.steps[0].customDate.split('-');
@@ -773,7 +948,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     } else if (proj.createdAt) {
       baseDate = new Date(proj.createdAt);
     } else {
-      baseDate = new Date('2026-09-11T12:00:00Z');
+      baseDate = new Date();
     }
 
     const d = new Date(baseDate);
@@ -825,29 +1000,8 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
     const newStepNum = pSteps.length <= 1 ? 1 : pSteps.length;
     const now = Date.now();
 
-    // Determine date for new step:
-    // If customDateIso is given, use it.
-    // Otherwise, default to 1 day after the previous step (pSteps[pSteps.length - 2]),
-    // or if only summit exists, 1 day before summit
-    let assignedDateIso: string | undefined = customDateIso;
-    if (!assignedDateIso) {
-      const prevStepIdx = pSteps.length - 2; // last regular step before summit
-      if (prevStepIdx >= 0) {
-        const prevStep = pSteps[prevStepIdx];
-        const prevDateObj = getStepDateObj(prevStep, prevStepIdx, targetProj);
-        const nextDay = new Date(prevDateObj);
-        nextDay.setDate(nextDay.getDate() + 1);
-        const pad = (n: number) => n.toString().padStart(2, '0');
-        assignedDateIso = `${nextDay.getFullYear()}-${pad(nextDay.getMonth() + 1)}-${pad(nextDay.getDate())}`;
-      } else {
-        // Only 1 step (summit) exists
-        const summitDateObj = getStepDateObj(pSteps[0], 0, targetProj);
-        const prevDay = new Date(summitDateObj);
-        prevDay.setDate(prevDay.getDate() - 1);
-        const pad = (n: number) => n.toString().padStart(2, '0');
-        assignedDateIso = `${prevDay.getFullYear()}-${pad(prevDay.getMonth() + 1)}-${pad(prevDay.getDate())}`;
-      }
-    }
+    // User requirement: When a new step is added, it must strictly have today's date
+    const assignedDateIso: string = customDateIso || getIsoDateString(0);
 
     const newStep: StairStep = {
       id: newStepId,
@@ -1289,7 +1443,7 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
         </div>
 
         {/* End / Right: Action Tools & Controls */}
-        <div className="flex items-center gap-2 sm:gap-3 flex-wrap justify-end">
+        <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap justify-end">
           {/* Create New Staircase Button */}
           <button
             onClick={handleCreateNewProject}
@@ -1298,6 +1452,26 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
           >
             <Plus className="w-4 h-4 stroke-[3]" />
             <span>پلکان جدید</span>
+          </button>
+
+          {/* Recycle Bin / Trash Button (سطل آشغال در کنار پلکان جدید) */}
+          <button
+            type="button"
+            onClick={() => setIsTrashModalOpen(true)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-md active:scale-95 border ${
+              trashItems.length > 0
+                ? 'bg-[#1f0e2b] hover:bg-[#2e133f] text-rose-300 hover:text-rose-100 border-rose-700/60 shadow-[0_0_12px_rgba(244,63,94,0.2)]'
+                : 'bg-[#150d24] hover:bg-purple-900/80 text-neutral-400 hover:text-neutral-200 border-purple-900/40'
+            }`}
+            title="سطل آشغال (پلکان‌ها و پله‌های حذف‌شده)"
+          >
+            <Trash2 className="w-4 h-4 text-rose-400 shrink-0" />
+            <span>سطل آشغال</span>
+            {trashItems.length > 0 && (
+              <span className="px-1.5 py-0.5 rounded-full bg-rose-500/25 text-rose-200 border border-rose-500/50 text-[10px] font-mono font-bold">
+                {toPersianDigits(trashItems.length)}
+              </span>
+            )}
           </button>
 
           {/* Notebook Drawer Toggle Button (دفترچه یادداشت کشویی) */}
@@ -3270,6 +3444,391 @@ export const StaircaseModal: React.FC<StaircaseModalProps> = ({
                 className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-500 text-slate-950 text-xs font-black transition active:scale-95"
               >
                 متوجه شدم
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recycle Bin / Trash Modal (سطل آشغال پلکان‌ها و پله‌های حذف‌شده) */}
+      {isTrashModalOpen && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/85 backdrop-blur-md flex items-center justify-center p-3 sm:p-4 animate-in fade-in duration-150 pointer-events-auto"
+          onClick={() => {
+            setIsTrashModalOpen(false);
+            setTrashConfirmDeleteId(null);
+            setIsClearTrashConfirmOpen(false);
+            setPreviewNotesItem(null);
+          }}
+          dir="rtl"
+        >
+          <div
+            className="bg-[#120822] border-2 border-rose-500/40 rounded-3xl p-5 sm:p-7 max-w-2xl w-full shadow-[0_0_60px_rgba(244,63,94,0.25)] flex flex-col gap-4 text-right max-h-[90vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-purple-900/60 pb-3.5 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-rose-500/15 border border-rose-500/40 text-rose-400 flex items-center justify-center shadow-[0_0_15px_rgba(244,63,94,0.3)] shrink-0">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-black text-white">سطل آشغال پلکان و پله‌ها</h3>
+                    <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs font-bold font-mono">
+                      {toPersianDigits(trashItems.length)} مورد
+                    </span>
+                  </div>
+                  <p className="text-xs text-neutral-400 mt-0.5">
+                    پلکان‌ها و پله‌های حذف‌شده به همراه دفترچه یادداشت در اینجا نگهداری می‌شوند.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {trashItems.length > 0 && !isClearTrashConfirmOpen && (
+                  <button
+                    onClick={() => setIsClearTrashConfirmOpen(true)}
+                    className="px-2.5 py-1.5 rounded-xl bg-rose-950/50 hover:bg-rose-900/70 text-rose-300 hover:text-rose-100 text-xs font-bold border border-rose-800/50 transition flex items-center gap-1"
+                    title="خالی کردن تمام موارد سطل آشغال"
+                  >
+                    <Trash className="w-3.5 h-3.5 text-rose-400" />
+                    <span className="hidden sm:inline">خالی کردن سطل</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setIsTrashModalOpen(false);
+                    setTrashConfirmDeleteId(null);
+                    setIsClearTrashConfirmOpen(false);
+                    setPreviewNotesItem(null);
+                  }}
+                  className="p-1.5 rounded-xl text-neutral-400 hover:text-white hover:bg-purple-950/60 transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Clear All Confirmation Banner */}
+            {isClearTrashConfirmOpen && (
+              <div className="p-3.5 rounded-2xl bg-rose-950/80 border border-rose-600/70 flex items-center justify-between gap-3 text-xs animate-in fade-in slide-in-from-top-1 shrink-0">
+                <div className="flex items-center gap-2 text-rose-200">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>آیا مطمئنید می‌خواهید سطل آشغال را به طور کامل خالی کنید؟ این عمل غیرقابل بازگشت است.</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    onClick={handleEmptyTrash}
+                    className="px-3 py-1 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold transition shadow-sm"
+                  >
+                    بله، خالی کن
+                  </button>
+                  <button
+                    onClick={() => setIsClearTrashConfirmOpen(false)}
+                    className="px-2.5 py-1 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 font-bold transition"
+                  >
+                    انصراف
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Filter Tabs */}
+            {trashItems.length > 0 && (
+              <div className="flex items-center gap-2 border-b border-purple-900/40 pb-2.5 shrink-0">
+                <button
+                  onClick={() => setTrashFilter('all')}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition ${
+                    trashFilter === 'all'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                      : 'bg-purple-950/40 text-neutral-400 hover:text-neutral-200 border border-purple-900/30'
+                  }`}
+                >
+                  همه موارد ({toPersianDigits(trashItems.length)})
+                </button>
+                <button
+                  onClick={() => setTrashFilter('project')}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition ${
+                    trashFilter === 'project'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                      : 'bg-purple-950/40 text-neutral-400 hover:text-neutral-200 border border-purple-900/30'
+                  }`}
+                >
+                  پلکان‌ها ({toPersianDigits(trashItems.filter((i) => i.type === 'project').length)})
+                </button>
+                <button
+                  onClick={() => setTrashFilter('step')}
+                  className={`px-3 py-1 rounded-xl text-xs font-bold transition ${
+                    trashFilter === 'step'
+                      ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm'
+                      : 'bg-purple-950/40 text-neutral-400 hover:text-neutral-200 border border-purple-900/30'
+                  }`}
+                >
+                  پله‌ها ({toPersianDigits(trashItems.filter((i) => i.type === 'step').length)})
+                </button>
+              </div>
+            )}
+
+            {/* Trash Items List */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1 custom-scrollbar">
+              {trashItems.length === 0 ? (
+                <div className="py-12 flex flex-col items-center justify-center text-center text-neutral-400 gap-3">
+                  <div className="w-16 h-16 rounded-3xl bg-purple-950/40 border border-purple-800/40 flex items-center justify-center text-neutral-500">
+                    <Trash2 className="w-8 h-8 stroke-[1.5]" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-neutral-200">سطل آشغال خالی است</p>
+                    <p className="text-xs text-neutral-500 mt-1">
+                      هیچ پلکان یا پله‌ای در سطل آشغال وجود ندارد.
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                trashItems
+                  .filter((item) => trashFilter === 'all' || item.type === trashFilter)
+                  .map((item) => {
+                    const isProject = item.type === 'project';
+                    const isConfirmingDelete = trashConfirmDeleteId === item.id;
+
+                    if (isProject) {
+                      const proj = (item as DeletedStaircaseItem).project;
+                      const projTodos = proj.steps?.flatMap((s) => s.todos) || [];
+                      const hasNotes = Boolean(proj.notes && proj.notes.trim().length > 0);
+
+                      return (
+                        <div
+                          key={item.id}
+                          className="p-4 rounded-2xl bg-[#170b2c]/80 border border-purple-800/50 hover:border-purple-700 transition flex flex-col gap-3 shadow-md"
+                        >
+                          <div className="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
+                            <div className="flex items-start gap-3 min-w-0 flex-1">
+                              <span className="p-2.5 rounded-xl bg-amber-500/15 text-amber-400 border border-amber-500/30 shrink-0 mt-0.5">
+                                <Trophy className="w-4 h-4" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h4 className="text-sm font-black text-white">{proj.title}</h4>
+                                  <span className="px-2 py-0.5 rounded-md bg-amber-500/20 text-amber-300 border border-amber-500/30 text-[10px] font-bold">
+                                    پلکان {proj.parentId ? '(زیرمجموعه)' : '(اصلی)'}
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 text-[11px] text-neutral-400 mt-1 flex-wrap">
+                                  <span>{toPersianDigits(proj.steps?.length || 0)} پله</span>
+                                  <span>•</span>
+                                  <span>{toPersianDigits(projTodos.length)} تسک</span>
+                                  {hasNotes && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-pink-300 font-medium flex items-center gap-1">
+                                        <BookOpen className="w-3 h-3 text-pink-400" />
+                                        دفترچه یادداشت دارد ({toPersianDigits(proj.notes!.length)} کاراکتر)
+                                      </span>
+                                    </>
+                                  )}
+                                  <span>•</span>
+                                  <span className="text-neutral-500">
+                                    حذف در: {formatShamsiDate(new Date(item.deletedAt), { showWeekday: false, showYear: true })} - ساعت{' '}
+                                    {formatHHMM(item.deletedAt, true)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Restore & Delete Actions */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              {hasNotes && (
+                                <button
+                                  type="button"
+                                  onClick={() => setPreviewNotesItem(item as DeletedStaircaseItem)}
+                                  className="px-2.5 py-1.5 rounded-xl bg-purple-950/60 hover:bg-purple-900 text-pink-300 hover:text-white border border-pink-500/30 text-xs font-bold transition flex items-center gap-1"
+                                  title="مشاهده متن یادداشت این پلکان"
+                                >
+                                  <BookOpen className="w-3.5 h-3.5 text-pink-400" />
+                                  <span className="hidden sm:inline">یادداشت‌ها</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => handleRestoreProject(item as DeletedStaircaseItem)}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow-sm"
+                                title="بازیابی پلکان به همراه تمام پله‌ها، تسک‌ها و دفترچه یادداشت"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>بازیابی (Restore)</span>
+                              </button>
+
+                              {isConfirmingDelete ? (
+                                <div className="flex items-center gap-1 animate-in fade-in">
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePermanentDelete(item.id)}
+                                    className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition shadow-sm"
+                                  >
+                                    تایید حذف دائم
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setTrashConfirmDeleteId(null)}
+                                    className="p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setTrashConfirmDeleteId(item.id)}
+                                  className="p-2 rounded-xl text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 transition"
+                                  title="حذف دائمی از سطل آشغال"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    } else {
+                      // Deleted Step Item
+                      const stepItem = item as DeletedStepItem;
+                      return (
+                        <div
+                          key={item.id}
+                          className="p-4 rounded-2xl bg-[#140a26]/80 border border-purple-900/50 hover:border-purple-800 transition flex flex-col gap-2 shadow-md"
+                        >
+                          <div className="flex items-start justify-between gap-3 flex-wrap sm:flex-nowrap">
+                            <div className="flex items-start gap-3 min-w-0 flex-1">
+                              <span className="p-2.5 rounded-xl bg-cyan-500/15 text-cyan-400 border border-cyan-500/30 shrink-0 mt-0.5">
+                                <TrendingUp className="w-4 h-4" />
+                              </span>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <h4 className="text-sm font-black text-white">{stepItem.step.title}</h4>
+                                  <span className="px-2 py-0.5 rounded-md bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 text-[10px] font-bold">
+                                    پله
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 text-[11px] text-neutral-400 mt-1 flex-wrap">
+                                  <span className="text-amber-300/90 font-medium">
+                                    پلکان مبدا: «{stepItem.projectTitle}»
+                                  </span>
+                                  <span>•</span>
+                                  <span>{toPersianDigits(stepItem.step.todos?.length || 0)} تسک همراه</span>
+                                  <span>•</span>
+                                  <span className="text-neutral-500">
+                                    حذف در: {formatShamsiDate(new Date(item.deletedAt), { showWeekday: false, showYear: true })} - ساعت{' '}
+                                    {formatHHMM(item.deletedAt, true)}
+                                  </span>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Restore & Delete Actions */}
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                type="button"
+                                onClick={() => handleRestoreStep(stepItem)}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-emerald-100 border border-emerald-500/40 text-xs font-bold transition flex items-center gap-1.5 active:scale-95 shadow-sm"
+                                title="بازیابی این پله به همراه تسک‌های آن"
+                              >
+                                <RotateCcw className="w-3.5 h-3.5 stroke-[2.5]" />
+                                <span>بازیابی (Restore)</span>
+                              </button>
+
+                              {isConfirmingDelete ? (
+                                <div className="flex items-center gap-1 animate-in fade-in">
+                                  <button
+                                    type="button"
+                                    onClick={() => handlePermanentDelete(item.id)}
+                                    className="px-2.5 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition shadow-sm"
+                                  >
+                                    تایید حذف دائم
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => setTrashConfirmDeleteId(null)}
+                                    className="p-1.5 rounded-xl bg-neutral-800 hover:bg-neutral-700 text-neutral-300 transition"
+                                  >
+                                    <X className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setTrashConfirmDeleteId(item.id)}
+                                  className="p-2 rounded-xl text-neutral-400 hover:text-rose-400 hover:bg-rose-950/40 transition"
+                                  title="حذف دائمی از سطل آشغال"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    }
+                  })
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between border-t border-purple-900/60 pt-3 shrink-0">
+              <span className="text-xs text-neutral-400">
+                💡 موارد بازیابی‌شده بلافاصله در پلکان فعال در دسترس خواهند بود.
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsTrashModalOpen(false);
+                  setTrashConfirmDeleteId(null);
+                  setIsClearTrashConfirmOpen(false);
+                  setPreviewNotesItem(null);
+                }}
+                className="px-4 py-2 rounded-xl bg-purple-950/70 hover:bg-purple-900 text-neutral-200 text-xs font-bold border border-purple-800/50 transition"
+              >
+                بستن
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Notes Modal for a Deleted Project */}
+      {previewNotesItem && (
+        <div
+          className="fixed inset-0 z-[110] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 animate-in fade-in duration-150 pointer-events-auto"
+          onClick={() => setPreviewNotesItem(null)}
+          dir="rtl"
+        >
+          <div
+            className="bg-[#120924] border border-pink-500/50 rounded-3xl p-6 max-w-lg w-full shadow-[0_0_50px_rgba(217,70,239,0.3)] flex flex-col gap-4 text-right max-h-[80vh] overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-purple-900/60 pb-3">
+              <div className="flex items-center gap-2 text-pink-300 font-bold text-sm">
+                <BookOpen className="w-4 h-4" />
+                <span>دفترچه یادداشت پلکان: «{previewNotesItem.project.title}»</span>
+              </div>
+              <button
+                onClick={() => setPreviewNotesItem(null)}
+                className="p-1 rounded-lg text-neutral-400 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto bg-[#0a0414] p-4 rounded-2xl border border-purple-950 text-xs text-neutral-200 font-sans leading-relaxed whitespace-pre-wrap select-text">
+              {previewNotesItem.project.notes || 'هیچ متنی در دفترچه یادداشت وجود ندارد.'}
+            </div>
+            <div className="flex items-center justify-end">
+              <button
+                onClick={() => setPreviewNotesItem(null)}
+                className="px-4 py-1.5 rounded-xl bg-purple-950 text-neutral-200 hover:text-white text-xs font-bold transition border border-purple-800/50"
+              >
+                بستن
               </button>
             </div>
           </div>

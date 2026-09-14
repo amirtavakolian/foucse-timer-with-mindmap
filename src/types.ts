@@ -73,6 +73,25 @@ export interface StaircaseProject {
   parentId?: string; // Optional ID of parent staircase if this is a sub-staircase
 }
 
+export interface DeletedStaircaseItem {
+  id: string;
+  type: 'project';
+  deletedAt: number;
+  project: StaircaseProject; // includes steps, todos, notes, parentId
+}
+
+export interface DeletedStepItem {
+  id: string;
+  type: 'step';
+  deletedAt: number;
+  projectId: string;
+  projectTitle: string;
+  step: StairStep;
+  originalIndex?: number;
+}
+
+export type StaircaseTrashItem = DeletedStaircaseItem | DeletedStepItem;
+
 export interface NoteItem {
   id: string;
   title: string;

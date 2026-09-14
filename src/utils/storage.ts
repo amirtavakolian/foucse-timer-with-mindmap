@@ -1,4 +1,4 @@
-import { AppSettings, FocusSession, TaskItem, StairStep, StaircaseProject, NoteItem } from '../types';
+import { AppSettings, FocusSession, TaskItem, StairStep, StaircaseProject, StaircaseTrashItem, NoteItem } from '../types';
 import { getTodayDateStr, TimeIntervalRecord, generateDayIntervals } from './time';
 
 export const SESSIONS_KEY = 'win_focus_timer_sessions_v1';
@@ -8,6 +8,7 @@ export const MINDMAP_NODES_KEY = 'focustime_mindmap_nodes_v1';
 export const MINDMAP_CONNS_KEY = 'focustime_mindmap_conns_v1';
 export const STAIRCASE_STEPS_KEY = 'focustime_staircase_steps_v1';
 export const STAIRCASE_PROJECTS_KEY = 'focustime_staircase_projects_v1';
+export const STAIRCASE_TRASH_KEY = 'focustime_staircase_trash_v1';
 export const NOTES_KEY = 'focustime_notes_v1';
 export const ACTIVE_TIMER_KEY = 'focustime_active_timer_v1';
 export const INITIAL_START_DATE_KEY = 'focustime_initial_start_date_v1';
@@ -306,6 +307,7 @@ export function exportBackupData(): string {
     mindmapConnections: loadMindMapConnections(),
     intervalReports: loadIntervalReports(),
     staircaseProjects: loadStaircaseProjects(),
+    staircaseTrash: loadStaircaseTrash(),
     notes: loadNotes(),
     exportDate: new Date().toISOString(),
   };
@@ -325,6 +327,9 @@ export function importBackupData(jsonStr: string): boolean {
     }
     if (Array.isArray(parsed.staircaseProjects)) {
       saveStaircaseProjects(parsed.staircaseProjects);
+    }
+    if (Array.isArray(parsed.staircaseTrash)) {
+      saveStaircaseTrash(parsed.staircaseTrash);
     }
     if (Array.isArray(parsed.notes)) {
       saveNotes(parsed.notes);
@@ -460,6 +465,28 @@ export function saveStaircaseProjects(projects: StaircaseProject[]): void {
     syncApiSave(STAIRCASE_PROJECTS_KEY, projects);
   } catch (e) {
     console.warn('Failed to save staircase projects', e);
+  }
+}
+
+export function loadStaircaseTrash(): StaircaseTrashItem[] {
+  try {
+    const raw = localStorage.getItem(STAIRCASE_TRASH_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch (e) {
+    console.warn('Failed to load staircase trash', e);
+  }
+  return [];
+}
+
+export function saveStaircaseTrash(items: StaircaseTrashItem[]): void {
+  try {
+    localStorage.setItem(STAIRCASE_TRASH_KEY, JSON.stringify(items));
+    syncApiSave(STAIRCASE_TRASH_KEY, items);
+  } catch (e) {
+    console.warn('Failed to save staircase trash', e);
   }
 }
 
